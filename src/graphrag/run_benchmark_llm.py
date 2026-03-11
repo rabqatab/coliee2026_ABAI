@@ -24,12 +24,14 @@ logger = logging.getLogger(__name__)
 
 # Models to benchmark
 LLM_CANDIDATES = [
+    "qwen3:8b",
     "qwen3:32b",
     "gemma3:27b",
     "deepseek-r1:8b",
 ]
 
-N_SAMPLE_DOCS = 50
+N_SAMPLE_DOCS = 20
+MAX_WORDS_FOR_BENCHMARK = 3000  # Truncate docs for faster benchmarking
 
 
 def sample_documents(docs_dir: Path, n: int, seed: int = RANDOM_SEED) -> list[Path]:
@@ -51,6 +53,10 @@ def benchmark_single_model(
 
     for doc_path in docs:
         text = preprocess(doc_path.read_text(encoding="utf-8", errors="replace"))
+        # Truncate for benchmark speed — full extraction uses complete docs
+        words = text.split()
+        if len(words) > MAX_WORDS_FOR_BENCHMARK:
+            text = " ".join(words[:MAX_WORDS_FOR_BENCHMARK])
         start = time.time()
         try:
             result = extract_entities_llm(client, text, model=model)
@@ -69,6 +75,11 @@ def benchmark_single_model(
                 "time_seconds": elapsed,
             })
         times.append(elapsed)
+        logger.info(
+            "  [%d/%d] %s — %.1fs (%s)",
+            len(times), len(docs), doc_path.name, elapsed,
+            "OK" if "extraction" in results[-1] else "FAIL",
+        )
 
     # Aggregate stats
     entity_counts = {

@@ -22,10 +22,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 EMBED_CANDIDATES = [
-    "qwen3-embedding:8b",
-    "qwen3-embedding:0.6b",
-    "bge-m3",
     "nomic-embed-text",
+    "bge-m3",
+    "qwen3-embedding:0.6b",
+    # "qwen3-embedding:8b",  # Too slow on GB10 (~130s/batch, impractical for 7.7K docs)
 ]
 
 
@@ -84,6 +84,45 @@ def compute_retrieval_metrics(
     }
 
 
+N_SAMPLE_QUERIES = 200  # Subsample queries for faster benchmarking
+CORPUS_POOL_MULTIPLIER = 5  # Include top-N * multiplier candidate docs per query
+
+
+def _subsample_corpus(
+    corpus: dict[str, str],
+    labels: dict[str, list[str]],
+    n_queries: int = N_SAMPLE_QUERIES,
+    seed: int = 42,
+) -> tuple[dict[str, str], dict[str, list[str]], list[str]]:
+    """Subsample the corpus for faster benchmarking.
+
+    Selects n_queries and their cited docs, plus a random negative pool.
+    This gives valid Recall@K metrics without embedding the full 7,708 docs.
+    """
+    import random
+    rng = random.Random(seed)
+
+    # Sample queries
+    all_query_ids = sorted(labels.keys())
+    sampled_queries = rng.sample(all_query_ids, min(n_queries, len(all_query_ids)))
+
+    # Collect all cited docs + the queries themselves
+    needed_ids = set(sampled_queries)
+    for qid in sampled_queries:
+        needed_ids.update(labels[qid])
+
+    # Add random negatives to make retrieval challenging
+    all_ids = set(corpus.keys())
+    remaining = list(all_ids - needed_ids)
+    n_negatives = min(len(remaining), n_queries * CORPUS_POOL_MULTIPLIER)
+    needed_ids.update(rng.sample(remaining, n_negatives))
+
+    sub_corpus = {k: corpus[k] for k in sorted(needed_ids) if k in corpus}
+    sub_labels = {q: labels[q] for q in sampled_queries}
+
+    return sub_corpus, sub_labels, sorted(sub_corpus.keys())
+
+
 def main():
     output_dir = BENCHMARK_DIR / "embed"
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -93,10 +132,12 @@ def main():
     corpus = load_corpus(TRAIN_DOCS_DIR)
     labels = json.loads(TRAIN_LABELS.read_text())
 
+    # Subsample for speed
+    corpus, labels, corpus_ids = _subsample_corpus(corpus, labels)
+
     # Preprocess all documents
-    corpus_ids = sorted(corpus.keys())
     corpus_texts = [truncate_for_embedding(preprocess(corpus[cid])) for cid in corpus_ids]
-    logger.info("Corpus: %d documents", len(corpus_ids))
+    logger.info("Corpus: %d documents (subsampled)", len(corpus_ids))
 
     # Query IDs are keys in labels
     query_ids = sorted(labels.keys())

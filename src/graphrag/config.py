@@ -20,8 +20,8 @@ BENCHMARK_DIR = OUTPUT_DIR / "benchmarks"
 
 # === Ollama ===
 OLLAMA_BASE_URL = "http://localhost:11434"
-LLM_MODEL = "qwen3:32b"  # Updated after benchmarking
-EMBED_MODEL = "qwen3-embedding:8b"  # Updated after benchmarking
+LLM_MODEL = "deepseek-r1:8b"  # Benchmark winner: 100% JSON, 19s/doc, most concepts
+EMBED_MODEL = "qwen3-embedding:0.6b"  # Benchmark winner: R@200=0.794, MRR=0.462
 
 # === Extraction ===
 MAX_WORDS_SINGLE_CALL = 8000  # Docs under this: single LLM call

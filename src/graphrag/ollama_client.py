@@ -48,13 +48,28 @@ class OllamaClient:
         system: str = "",
         temperature: float = LLM_TEMPERATURE,
     ) -> dict[str, Any]:
-        """Generate and parse JSON output. Retries on malformed JSON."""
+        """Generate and parse JSON output using Ollama's native JSON mode.
+
+        Uses format='json' to force structured output and bypass thinking tokens.
+        Falls back to text parsing with retries if native JSON mode fails.
+        """
         for attempt in range(LLM_MAX_RETRIES + 1):
-            text = self.generate(
-                model, prompt, system=system, temperature=temperature
-            )
+            payload: dict[str, Any] = {
+                "model": model,
+                "prompt": prompt,
+                "format": "json",
+                "stream": False,
+                "options": {
+                    "temperature": temperature,
+                    "num_predict": 4096,
+                },
+            }
+            if system:
+                payload["system"] = system
+            resp = self._client.post("/api/generate", json=payload)
+            resp.raise_for_status()
+            text = resp.json()["response"].strip()
             # Strip markdown fences if present
-            text = text.strip()
             if text.startswith("```"):
                 lines = text.split("\n")
                 text = "\n".join(lines[1:])
