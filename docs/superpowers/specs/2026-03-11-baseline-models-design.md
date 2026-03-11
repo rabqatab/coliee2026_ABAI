@@ -790,7 +790,7 @@ packages = ["src/graphrag", "src/baselines"]
 | SAILER checkpoint incompatible with transformers version | Blocks JNLP baseline | Test download early; SAILER has asymmetric encoder-decoder (not standard AutoModel). Reference SAILER repo for loading code. Fall back to `CSHaitao/SAILER_en` (base) or `nlpaueb/legal-bert-base-uncased` if needed |
 | TQM paper underspecifies features/heuristics | Incomplete reproduction | Document assumptions; note where we deviated from paper |
 | CaseLink repo has breaking dependency issues | Blocks GNN baseline | Pin versions; adapt architecture from paper if repo fails |
-| Memory constraints (7,708 docs x embeddings) | OOM | Batch encoding, disk-cached embeddings, float16 |
+| Memory constraints (~9,556 docs x embeddings) | OOM | Batch encoding, disk-cached embeddings, float16 |
 | Bi-encoder fine-tuning overfits on small train set | Poor TQM performance | Early stopping, small learning rate, regularization |
 | Proposition extraction ambiguous in UMNLP paper | Weak feature | Reference GitHub repo for exact implementation |
 
