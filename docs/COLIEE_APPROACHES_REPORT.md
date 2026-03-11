@@ -6,27 +6,36 @@
 
 ### Key Takeaways
 
-1. **Hybrid pipelines dominate**: BM25 first-stage + neural reranking consistently outperforms pure approaches
-2. **Scale beats domain data**: Zero-shot LLMs (T5-11B, GPT-4) outperform fine-tuned smaller models
-3. **Structure matters**: Paragraph-level encoding + legal document structure improves retrieval
-4. **Ensemble is king**: No single model wins; top teams always use ensembles
-5. **Graph methods emerging**: Citation networks via GNNs show promising results (2023-2025)
+1. **Hybrid pipelines dominate**: BM25 first-stage + neural/feature-based reranking consistently outperforms pure approaches
+2. **Feature engineering > end-to-end DL** (Task 1): JNLP won 2025 with BM25+SAILER+LightGBM, TQM won 2024 with LTR fusion — hand-crafted features + gradient boosting beat pure neural
+3. **Structure matters**: SAILER (structure-aware pre-training), paragraph-level encoding, and citation contexts all provide strong signal
+4. **Ensemble is king**: No single model wins; top teams use ensembles (NOWJ's LLM voting, TQM's LTR fusion, OVGU's model chaining)
+5. **Graph methods emerging**: CaseLink GNN achieved consistent 2nd place Task 1 in 2025 (F1=0.2962)
+6. **Citation context is a signal**: IIT Bhilai (2025) and UMNLP's "propositions" (2024) independently showed that text around citations captures *why* cases are cited
+7. **Open-source models competitive**: DeepSeek-V3, QwQ-32B, Qwen2-72B, LLaMA-3 power all top 2025 systems (closed-source banned since 2025)
 
 ### Performance Milestones
 
-| Task | 2019 | 2021 | 2023 | 2025 | Key Breakthrough |
-|------|------|------|------|------|------------------|
-| Task 1 (Retrieval) | 0.19 | 0.29 | 0.35 | 0.40 | Structural BERT + GNN |
-| Task 2 (Entailment) | 0.52 | 0.68 | 0.71 | 0.75 | Zero-shot LLMs |
+| Task | 2019 | 2021 | 2023 | 2024 | 2025 | Key Breakthrough |
+|------|------|------|------|------|------|------------------|
+| Task 1 (Retrieval) | 0.19 | 0.29 | 0.35 | **0.44** | 0.34 | LTR fusion (2024), SAILER+LightGBM (2025) |
+| Task 2 (Entailment) | 0.52 | 0.68 | 0.71 | **0.65** | 0.32 | monoT5+hard negatives (2024), LLM voting (2025) |
+
+*Note: 2025 scores dropped significantly vs. 2024 — likely due to harder/larger test sets, not method regression. The 2025 corpus expanded to ~7,708 documents with 2,159 test queries (vs. 400 in 2024).*
 
 ### Notable Findings
 
 - ⭐ **THUIR** (Tsinghua): Dominated Task 1 for 4 consecutive years (2020-2023)
 - ⭐ **Unicamp/NeuralMind**: Proved zero-shot T5-11B beats all fine-tuned models (2021)
-- ⭐ **CaseGNN**: First successful application of GNNs to legal case retrieval (2023)
+- ⭐ **CaseGNN/CaseLink**: GNNs for legal case retrieval — 2nd place Task 1 in 2025 (F1=0.2962)
+- ⭐ **TQM** (Tsinghua): LTR fusion of lexical+semantic+simple features won Task 1 in 2024 (F1=0.4432)
+- ⭐ **JNLP**: BM25+SAILER+LightGBM won Task 1 in 2025 (F1=0.3353) — feature engineering beats deep learning
+- ⭐ **UMNLP**: Novel "propositions" features + judge matching — 2nd place 2024 (F1=0.4134)
+- ⭐ **IIT Bhilai**: Citation-neighbourhood retrieval — text surrounding citation markers as features (2025)
 - ⭐ **ReaKase-8B**: LLM-based embeddings with reasoning augmentation (2025)
 - ⭐ **"Legal Prompting"**: Chain-of-thought significantly improves legal reasoning
 - ⭐ **U-CREAT**: Unsupervised event extraction for cross-system retrieval (2023)
+- ⭐ **KIS**: 130M parameter model beat 70B model for rationale extraction (2025)
 
 ---
 
@@ -441,40 +450,47 @@ Multi-task learning provides modest gains; ensembling provides larger gains.
 
 ---
 
-### Paper 11: NOWJ@COLIEE 2025 (Latest)
+### Paper 11: NOWJ@COLIEE 2025 — Task 2 Winner
 
-**"NOWJ@COLIEE 2025: A Multi-stage Framework Integrating Embedding Models and Large Language Models"**
+**"NOWJ@COLIEE 2025: A Multi-stage Framework Integrating Embedding Models and Large Language Models for Legal Retrieval and Entailment"**
 
 | | |
 |---|---|
-| **Authors** | Hoang-Trung Nguyen, Tan-Minh Nguyen, et al. |
-| **Venue** | COLIEE 2025 Workshop |
-| **Paper** | https://arxiv.org/abs/2509.xxxxx |
+| **Authors** | Hoang-Trung Nguyen, Tan-Minh Nguyen, Xuan-Bach Le, Tuan-Kiet Le, Khanh-Huyen Nguyen, Ha-Thanh Nguyen, Thi-Hai-Yen Vuong, Le-Minh Nguyen |
+| **Venue** | COLIEE 2025 Workshop (ICAIL 2025) |
+| **Paper** | https://arxiv.org/abs/2509.08025 |
 | **Code** | N/A |
-| **Result** | Top performer on Task 2 (F1: 0.75+) |
+| **Result** | 🏆 **1st Place, Task 2 (F1: 0.3195)** |
 
 #### Background
-Previous pipelines used older embedding models (BERT-based). New embedding models (BGE-m3, LLM2Vec) offer better representations.
+Previous entailment approaches relied on single models (monoT5). COLIEE 2025 shifted to open-source-only models, requiring new strategies.
 
 #### Approach
-Integrate latest embedding models with LLM reranking in a multi-stage pipeline.
+Two-stage system combining lexical-semantic filtering with contextualized LLM analysis and multi-model voting.
 
 #### Method
 ```
-Pipeline:
-1. Pre-ranking: BM25 + BERT + monoT5
-2. Embedding: BGE-m3 + LLM2Vec
-3. Re-ranking: LLM (Claude/GPT-4) with CoT
-4. Fusion: Reciprocal Rank Fusion (RRF)
+Task 2 Pipeline (winning run):
+1. BM25: Retrieve top-35 candidate paragraphs
+2. LLM Reranking: DeepSeek-V3 and Qwen/QwQ-32B score candidates
+3. Entailment Classification: LLM-based binary prediction
+4. Majority Voting: Ensemble across multiple LLM outputs
+
+Task 1 Pipeline (4th place, F1=0.1984):
+1. Pre-processing + LLM-based summarization
+2. Pre-ranking: BM25, BERT, monoT5
+3. Embeddings: BGE-m3, LLM2Vec
+4. Re-ranking: Qwen-2, QwQ-32B, DeepSeek-V3
 ```
 
 #### Dataset & Experiment
 - COLIEE 2025 all tasks
-- Task 2: F1 = 0.75+ (new SOTA)
-- BGE-m3 outperformed Legal-BERT significantly
+- Task 2: F1 = 0.3195 (1st place) — all three NOWJ runs in top positions
+- Task 1: F1 = 0.1984 (5th place by team)
+- Key insight: majority voting across diverse LLMs significantly boosts performance
 
 #### Conclusion
-Latest embedding models + LLM reranking sets new state-of-the-art.
+LLM ensemble voting outperforms single-model approaches for entailment. Open-source LLMs (DeepSeek-V3, QwQ-32B) are competitive for legal reasoning when combined via voting.
 
 ---
 
@@ -1055,54 +1071,409 @@ Aggregating multiple LLM samples via label models improves performance and consi
 
 ---
 
+### Paper 26: TQM@COLIEE 2024 — Task 1 Winner
+
+**"Towards an In-Depth Comprehension of Case Relevance for Better Legal Retrieval"**
+
+| | |
+|---|---|
+| **Authors** | Haitao Li, You Chen, Zhekai Ge, Qingyao Ai, Yiqun Liu, Quan Zhou, Shuai Huo |
+| **Venue** | COLIEE 2024 Workshop (JSAI-isAI 2024), Springer LNCS 14741 |
+| **Paper** | https://arxiv.org/abs/2404.00947 |
+| **Code** | N/A |
+| **Result** | 🏆 **1st Place, Task 1 (F1: 0.4432)** |
+
+#### Background
+Prior THUIR work focused on structural encoding (paragraph-level BERT). The TQM team extended this with deeper relevance features and learning-to-rank fusion.
+
+#### Approach
+Combine lexical matching, semantic retrieval, and simple case-level features via a learning-to-rank framework with heuristic post-processing.
+
+#### Method
+```
+1. Pre-processing: Noise elimination from raw case texts
+2. Lexical matching: BM25, TF-IDF with enhanced relevance features
+3. Semantic retrieval: Dense vector models
+4. Feature fusion: Learning-to-rank (LTR) combining all signals + simple features (case length, etc.)
+5. Post-processing: Heuristic strategies based on common properties of relevant cases
+```
+
+#### Dataset & Experiment
+- COLIEE 2024 Task 1: 400 test queries, 7,350 corpus documents
+- F1 = 0.4432 (1st), Precision = 0.5057, Recall = 0.3944
+- Notably high precision — post-processing heuristics helped reduce false positives
+
+#### Conclusion
+LTR fusion of diverse feature types sets new SOTA. Post-processing heuristics based on domain knowledge provide meaningful gains. **This validates the meta-learner approach in our pipeline design.**
+
+---
+
+### Paper 27: UMNLP@COLIEE 2024 — "Propositions" Features
+
+**"Similarity Ranking of Case Law Using Propositions as Features"**
+
+| | |
+|---|---|
+| **Authors** | Damian Curran, Mike Conway |
+| **Venue** | COLIEE 2024 Workshop, Springer LNCS 14741 |
+| **Paper** | https://dl.acm.org/doi/10.1007/978-981-97-3076-6_11 |
+| **Code** | https://github.com/dc435/COLIEE_2024_Task1 |
+| **Result** | 🥈 **2nd Place, Task 1 (F1: 0.4134)** |
+
+#### Background
+Standard retrieval features (BM25, dense similarity) miss nuanced legal relationships. What if we could capture *why* a case was cited?
+
+#### Approach
+Introduce "propositions" — short summaries of the basis on which a case was noticed — as novel retrieval features, combined with judge matching and quotation extraction.
+
+#### Method
+```
+1. Feature Extraction:
+   - Propositions: short summaries of citation basis
+   - Judge name matching (same judge → higher relevance)
+   - Verbatim quotation extraction
+   - Paragraph/sentence-level similarity features
+2. Classification: Feed-forward neural network for binary query-candidate classification
+3. Threshold: Optimized cutoff on dev set
+```
+
+#### Dataset & Experiment
+- COLIEE 2024 Task 1
+- F1 = 0.4134 (2nd), Precision = 0.4000, Recall = 0.4277
+- "Propositions" feature contributed significantly; judge matching added modest gains
+- Code available on GitHub for reproducibility
+
+#### Conclusion
+Novel domain-specific features (propositions, judge matching) provide strong signal for legal retrieval. **The "propositions" concept is closely related to our citation context approach — text around `<FRAGMENT_SUPPRESSED>` markers captures similar information.**
+
+---
+
+### Paper 28: AMHR@COLIEE 2024 — Task 2 Winner (monoT5 + Hard Negatives)
+
+**"AMHR COLIEE 2024 Entry: Legal Entailment and Retrieval"**
+
+| | |
+|---|---|
+| **Authors** | Animesh Nighojkar, Kenneth Jiang, Logan Fields, Onur Bilgin, Stephen Steinle, Yernar Sadybekov, Zaid Marji, John Licato |
+| **Venue** | COLIEE 2024 Workshop, Springer LNCS 14741 |
+| **Paper** | https://link.springer.com/chapter/10.1007/978-981-97-3076-6_14 |
+| **Code** | N/A |
+| **Result** | 🏆 **1st Place, Task 2 (F1: 0.6512)** |
+
+#### Background
+Task 2 requires identifying which paragraph entails a legal conclusion. Previous methods used standard fine-tuning without careful negative sampling.
+
+#### Approach
+Fine-tune monoT5 with hard negative mining (BM25-retrieved non-relevant paragraphs) and a score-ratio threshold for prediction count.
+
+#### Method
+```
+1. Base Model: monoT5 pre-trained on MS-MARCO
+2. Hard Negative Mining:
+   - Use BM25 to retrieve similar-but-irrelevant paragraphs
+   - Use another monoT5 version to find hard negatives
+   - Train on these challenging examples
+3. Prediction:
+   - Score all candidate paragraphs
+   - If score ratio (top1/top2) < 6.619: predict top-2
+   - Otherwise: predict top-1 only
+   - Threshold = 6.619 determined via grid search
+```
+
+#### Dataset & Experiment
+- COLIEE 2024 Task 2: 725 train cases, 100 test cases
+- F1 = 0.6512, Precision = 0.6364, Recall = 0.6667
+- Hard negative mining: significant improvement over standard training
+- Score-ratio threshold: elegant solution for variable prediction count
+
+#### Conclusion
+Hard negative mining is critical for entailment tasks. The score-ratio threshold is a simple but effective heuristic for deciding prediction count.
+
+---
+
+### Paper 29: JNLP@COLIEE 2025 — Task 1 Winner (BM25 + SAILER + LightGBM)
+
+**"Hybrid Large Language Model-based Framework for Legal Information Retrieval and Entailment"**
+
+| | |
+|---|---|
+| **Authors** | Hai Nguyen, Hiep Nguyen, Trang Pham, Minh Nguyen, An Trieu, Dinh-Truong Do, Nguyen-Khang Le, Le-Minh Nguyen |
+| **Venue** | COLIEE 2025 Workshop (ICAIL 2025) |
+| **Paper** | https://coliee.org/documents/Proceedings/2025-Proceedings.pdf |
+| **Code** | N/A |
+| **Result** | 🏆 **1st Place, Task 1 (F1: 0.3353)**, 🏆 **1st Place, Task 3 (F2: 0.836)** |
+
+#### Background
+JNLP built on the UMNLP 2024 framework (propositions/features + NN classifier), extending it with BM25 and SAILER scores fed into LightGBM.
+
+#### Approach
+Feature-based gradient boosting (LightGBM) combining lexical (BM25), semantic (SAILER), and structural features — a machine learning approach rather than end-to-end deep learning.
+
+#### Method
+```
+Task 1 Pipeline:
+1. Stage 1 - BM25 Filtering:
+   - Retrieve top 100-200 candidates per query
+   - Achieves 76-85% recall in <30 seconds over full corpus
+2. Stage 2 - Feature Extraction:
+   - BM25 scores (full document + paragraph-level)
+   - QLD (Query Likelihood with Dirichlet) scores
+   - SAILER scores (structure-aware pre-trained model)
+   - Dynamic scoring based on top-k retrieved docs
+3. Stage 3 - LightGBM Re-ranking:
+   - Gradient Boosting Decision Tree trained on relevance labels
+   - Gradient-based one-side sampling for efficiency
+   - Exclusive feature bundling for sparse features
+```
+
+#### Dataset & Experiment
+- COLIEE 2025 Task 1: 2,159 test queries, ~7,350 corpus
+- F1 = 0.3353 (1st), Precision = 0.3042, Recall = 0.3735
+- SAILER scores contributed the most novel signal
+- LightGBM chosen for speed and tabular data performance
+
+#### Conclusion
+**Feature engineering + gradient boosting beats end-to-end deep learning for legal retrieval.** SAILER (structure-aware pre-training) provides valuable semantic features. This directly validates our Option C pipeline design (BM25 → feature extraction → LightGBM meta-learner).
+
+---
+
+### Paper 30: UQLegalAI/CaseLink@COLIEE 2025 — GNN for Legal Retrieval
+
+**"UQLegalAI@COLIEE2025: Advancing Legal Case Retrieval with Large Language Models and Graph Neural Networks"**
+
+| | |
+|---|---|
+| **Authors** | Yanran Tang, Ruihong Qiu, et al. |
+| **Venue** | COLIEE 2025 Workshop (ICAIL 2025) |
+| **Paper** | https://arxiv.org/abs/2505.20743 |
+| **Code** | https://github.com/yanran-tang/CaseLink |
+| **Result** | 🥈 **2nd Place, Task 1 (F1: 0.2962)** |
+
+#### Background
+CaseLink extends CaseGNN with inductive graph learning, enabling predictions on unseen cases without retraining the graph.
+
+#### Approach
+Build Global Case Graphs (GCG) exploiting Case-Case, Case-Charge, and Charge-Charge relationships, then use GNNs to learn structure-aware representations.
+
+#### Method
+```
+1. Graph Construction:
+   - Global Case Graphs from training + test data
+   - Case-Case edges (citation relationships)
+   - Case-Charge edges (legal charge associations)
+   - Charge-Charge edges (charge co-occurrence)
+2. Node Features:
+   - LLM text embeddings as dense node features
+3. GNN Training:
+   - InfoNCE contrastive loss
+   - Degree regularization to handle hub nodes
+4. Inference:
+   - Inductive: handles unseen test cases
+   - Three runs: F1 = 0.2940, 0.2950, 0.2962
+```
+
+#### Dataset & Experiment
+- COLIEE 2025 Task 1
+- Consistent 2nd place across all three submitted runs
+- Captures inter-case connectivity that text-only methods miss
+
+#### Conclusion
+GNN-based retrieval captures structural signals absent from text-only methods. CaseLink's inductive approach is practical for competition settings. **Relevant to our GraphRAG Lite design — community structure provides similar inter-case signals.**
+
+---
+
+### Paper 31: OVGU@COLIEE 2025 — Silver Data Fine-Tuning
+
+**"LLMs, Knowledge Graphs, and Hybrid Search: Task-Specific Approaches to Legal AI in COLIEE"**
+
+| | |
+|---|---|
+| **Authors** | Sabine Wehnert et al. |
+| **Venue** | COLIEE 2025 Workshop (ICAIL 2025) |
+| **Paper** | https://www.researchgate.net/publication/394930419 |
+| **Code** | N/A |
+| **Result** | 🥈 **2nd Place, Task 2 (F1: 0.2454)** |
+
+#### Background
+Limited labeled data constrains fine-tuning. Can LLM-generated labels ("silver data") substitute for human annotations?
+
+#### Approach
+Create silver datasets by prompting nine LLMs on training data, then fine-tune smaller models on the aggregated pseudo-labels.
+
+#### Method
+```
+Task 2:
+1. Silver Dataset Creation:
+   - Prompt 9 LLMs with problem type definitions
+   - Models predict entailment labels + reasoning
+   - Aggregate into silver training data
+2. Fine-Tuning:
+   - Phi-3-medium-4k-instruct
+   - gemma-1.1-7b-it
+3. Ensemble:
+   - Majority voting across model predictions
+
+Task 1:
+- BM25Plus + case summaries (phi4)
+- LLM ensemble filtering (gemma3:12b, wizardlm2:7b, phi4, deepseek-r1:32b)
+```
+
+#### Dataset & Experiment
+- COLIEE 2025 Task 2: F1 = 0.2454 (2nd place)
+- Silver data fine-tuning outperformed zero-shot approaches
+- Resource-efficient: competed with limited compute
+
+#### Conclusion
+LLM-generated silver data is a practical strategy for data augmentation when labeled data is scarce.
+
+---
+
+### Paper 32: IIT Bhilai — Citation-Neighbourhood Retrieval
+
+**"Knowledge-Based Legal Case Retrieval"**
+
+| | |
+|---|---|
+| **Authors** | Chetana et al. |
+| **Venue** | COLIEE 2025 |
+| **Paper** | N/A |
+| **Code** | https://github.com/chetaniitbhilai/Knowledge-Based-Legal-Case-Retrieval |
+| **Result** | Participated in Task 1 |
+
+#### Background
+Most retrieval methods use full document text. But citation markers in legal cases indicate *where* citations occur — the surrounding text reveals *why* a case was cited.
+
+#### Approach
+Represent cases using compact textual segments surrounding citation markers, compute similarity-based features on filtered sets.
+
+#### Method
+```
+1. Citation Neighbourhood Extraction:
+   - Identify citation markers in case text
+   - Extract compact text segments around each marker
+   - Build case representation from citation contexts
+2. Feature Computation:
+   - Similarity-based features on filtered candidate set
+3. Classification:
+   - Ensemble: MLP + Random Forest
+   - Combined relevance scoring
+```
+
+#### Dataset & Experiment
+- COLIEE 2025 Task 1
+- Exact scores not published in proceedings overview
+- Demonstrated the viability of citation-neighbourhood as a retrieval signal
+
+#### Conclusion
+**Citation context is an independent signal for legal retrieval.** This directly validates our citation context window approach. The IIT Bhilai team independently discovered that text surrounding citation markers contains valuable retrieval information.
+
+---
+
+### Paper 33: KIS@COLIEE 2025 — Small Model Wins
+
+**"KIS: COLIEE 2025 Task 4 Solver Using Japanese LLM"**
+
+| | |
+|---|---|
+| **Authors** | Masaki Fujita et al. |
+| **Venue** | COLIEE 2025 Workshop (ICAIL 2025) |
+| **Paper** | N/A |
+| **Code** | N/A |
+| **Result** | 🏆 **1st Place, Task 4 (Acc: 0.9041)**, 🏆 **1st Place, Pilot RE (F1: 0.712)** |
+
+#### Background
+Large models (70B+) are assumed necessary for legal reasoning. Is this always true?
+
+#### Approach
+Balanced few-shot prompting with a LLaMA 3.1-based LLM for Task 4; fine-tuned modernbert-ja-130m (130M params) for rationale extraction.
+
+#### Method
+```
+Task 4:
+- LLaMA 3.1-based LLM
+- Balanced few-shot prompting (equal yes/no examples)
+- Straightforward but carefully designed prompts
+
+Pilot (Rationale Extraction):
+- modernbert-ja-130m (130M parameters)
+- Fine-tuned on rationale extraction task
+- Beat CAPTAIN's 70B model (0.712 vs lower)
+```
+
+#### Dataset & Experiment
+- Task 4: 90/109 correct = 0.9041 accuracy (1st place)
+- Pilot RE: F1 = 0.712 (1st place)
+- The 130M model beat the 70B model for rationale extraction
+
+#### Conclusion
+**Task-specific fine-tuning of small models can outperform much larger models.** Careful prompt design and balanced sampling matter more than raw parameter count for structured legal tasks.
+
+---
+
 ## 🔬 Method Taxonomy
 
 ### Retrieval Methods (Task 1)
 
-| Category | Methods | Best F1 | Pros | Cons |
-|----------|---------|---------|------|------|
-| Lexical | BM25, TF-IDF | 0.20 | Fast, interpretable | Misses semantics |
-| Dense | Bi-encoder, DPR | 0.25 | Captures semantics | Slow, needs training |
-| Cross-encoder | BERT reranker | 0.30 | Best quality | Very slow |
-| Hybrid | BM25 → Neural | 0.35 | Best of both | Complex pipeline |
-| Graph | GNN on citations | 0.38 | Captures structure | Needs citation data |
-| LLM | GPT-4 reranking | 0.40 | Reasoning capability | Expensive |
+| Category | Methods | Best F1 | Year | Team | Pros | Cons |
+|----------|---------|---------|------|------|------|------|
+| Lexical | BM25, TF-IDF | 0.19 | 2021 | NeuralMind | Fast, interpretable | Misses semantics |
+| Dense | Bi-encoder, DPR | 0.22 | 2025 | AIIR Lab | Captures semantics | Slow, needs training |
+| Structural | Paragraph BERT | 0.35 | 2023 | THUIR | Handles long docs | Training-intensive |
+| GNN | CaseLink, CaseGNN | 0.30 | 2025 | UQLegalAI | Captures graph structure | Needs citation data |
+| LTR Fusion | BM25+Dense+Features | **0.44** | 2024 | TQM | Best of all worlds | Complex pipeline |
+| Feature+GBDT | BM25+SAILER+LightGBM | 0.34 | 2025 | JNLP | Efficient, interpretable | Feature engineering effort |
+| Propositions | Features+NN | 0.41 | 2024 | UMNLP | Novel signals | Domain-specific features |
+| LLM Ensemble | BM25+Multi-LLM | 0.20 | 2025 | NOWJ | Reasoning capability | Slow, expensive |
 
 ### Entailment Methods (Task 2)
 
-| Category | Methods | Best F1 | Pros | Cons |
-|----------|---------|---------|------|------|
-| Classification | BERT [CLS] | 0.55 | Simple | Limited reasoning |
-| Similarity | Sentence-BERT | 0.50 | Fast | Not true entailment |
-| Zero-shot | T5, GPT | 0.70 | No training needed | Expensive |
-| CoT Prompting | GPT + CoT | 0.75 | Best reasoning | Very expensive |
+| Category | Methods | Best F1 | Year | Team | Pros | Cons |
+|----------|---------|---------|------|------|------|------|
+| Classification | BERT [CLS] | 0.55 | 2023 | Various | Simple | Limited reasoning |
+| monoT5 | T5 reranker + hard neg | **0.65** | 2024 | AMHR | Strong performance | Requires MS-MARCO pretraining |
+| Chained Models | Legal-BERT chain | 0.60 | 2024 | OVGU | Robust | Complex setup |
+| Zero-shot | T5-11B | 0.68 | 2021 | NeuralMind | No training needed | Large model |
+| LLM Voting | Multi-LLM ensemble | 0.32 | 2025 | NOWJ | Best open-source | High compute |
+| Silver Data | LLM pseudo-labels | 0.25 | 2025 | OVGU | Data-efficient | Noisy labels |
+
+*Note: 2024 and 2025 Task 2 scores are not directly comparable due to different test sets. The 2025 test set was significantly harder.*
 
 ---
 
 ## 📋 Recommended Reading Order
 
 **For beginners:**
-1. "Yes, BM25 is a Strong Baseline" (understand the baseline)
-2. IITP@COLIEE 2019 (early neural approaches)
-3. JNLP 2021 (comprehensive overview)
+1. "Yes, BM25 is a Strong Baseline" (Paper 15 — understand the baseline)
+2. IITP@COLIEE 2019 (Paper 21 — early neural approaches)
+3. JNLP 2021 (Paper 14 — comprehensive overview)
 
 **For intermediate:**
-4. THUIR 2020 (semantic + exact matching)
-5. DoSSIER 2021 (dense retrieval)
-6. THUIR 2023 (winning pipeline)
+4. THUIR 2023 (Paper 1 — winning structural pipeline)
+5. TQM 2024 (Paper 26 — LTR fusion, Task 1 winner)
+6. AMHR 2024 (Paper 28 — monoT5 + hard negatives, Task 2 winner)
 
 **For advanced:**
-7. "To Tune or Not To Tune?" (zero-shot revolution)
-8. CaseGNN (graph methods)
-9. Legal Prompting (CoT reasoning)
-10. ReaKase-8B (LLM embeddings)
+7. "To Tune or Not To Tune?" (Paper 3 — zero-shot revolution)
+8. CaseLink/CaseGNN (Papers 5, 30 — graph methods evolution)
+9. JNLP 2025 (Paper 29 — **current Task 1 SOTA**, BM25+SAILER+LightGBM)
+10. UMNLP 2024 (Paper 27 — novel "propositions" features)
 
-**For latest:**
-11. NOWJ 2025 (current SOTA)
-12. Employing Label Models (aggregation techniques)
+**For our pipeline design:**
+11. IIT Bhilai 2025 (Paper 32 — citation-neighbourhood, validates our approach)
+12. NOWJ 2025 (Paper 11 — LLM ensemble voting)
+13. KIS 2025 (Paper 33 — small model can beat large)
+14. OVGU 2025 (Paper 31 — silver data fine-tuning)
 
 ---
 
-*Report compiled: 2026-01-27*
-*Total papers: 25*
-*Sources: arXiv, COLIEE Workshop Proceedings, Springer LNAI*
+## 📊 Cross-Reference: Detailed Competition Results
+
+For complete team-by-team results tables and all run scores, see:
+- `docs/COLIEE_2024_RESULTS.md` — COLIEE 2024 (10 teams Task 1, 6 teams Task 2)
+- `docs/COLIEE_2025_RESULTS.md` — COLIEE 2025 (8 teams Task 1, 6 teams Task 2)
+
+---
+
+*Report compiled: 2026-01-27, updated: 2026-03-11*
+*Total papers: 33*
+*Sources: arXiv, COLIEE Workshop Proceedings (ICAIL 2025, JSAI-isAI 2024), Springer LNAI, ResearchGate*
