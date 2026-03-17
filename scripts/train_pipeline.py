@@ -1,7 +1,7 @@
 """Run Option C training pipeline inside GPU Docker container.
 
 Thin wrapper around run_pipeline_v2.run_train_pipeline() with Docker-specific
-logging setup. All enhancement flags are read from graphrag.config.
+logging setup. All enhancement flags are read from coliee_task1.config.
 
 Usage (from host):
     docker exec -e PYTHONPATH=/workspace/coliee2026/src coliee_optionc \
@@ -39,7 +39,7 @@ def main():
     )
     args = parser.parse_args()
 
-    from graphrag.run_pipeline_v2 import run_train_pipeline
+    from coliee_task1.pipeline import run_train_pipeline
 
     t0 = time.time()
     metrics = run_train_pipeline(
