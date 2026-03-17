@@ -19,14 +19,8 @@ EMBEDDINGS_DIR = OUTPUT_DIR / "embeddings"
 BENCHMARK_DIR = OUTPUT_DIR / "benchmarks"
 MODELS_DIR = OUTPUT_DIR / "models_v2"
 
-# === Ollama (legacy, still used for LLM extraction) ===
+# === Ollama (used by synthetic data) ===
 OLLAMA_BASE_URL = "http://localhost:11434"
-LLM_MODEL = "deepseek-r1:8b"
-EMBED_MODEL = "qwen3-embedding:0.6b"
-LLM_TEMPERATURE = 0.1
-LLM_MAX_RETRIES = 2
-MAX_WORDS_SINGLE_CALL = 8000
-CHUNK_OVERLAP_WORDS = 200
 
 # === Citation Context (View 2) ===
 CONTEXT_WINDOW_WORDS = 150  # ±150 words around <FRAGMENT_SUPPRESSED>
@@ -142,31 +136,7 @@ N_FOLDS = 5
 RANDOM_SEED = 42
 
 # === Enhancement Flags (toggle for A/B testing) ===
-USE_LAMBDARANK = False       # Option 2: LambdaRank ranking objective
-USE_PPR_FEATURES = False     # Option 1: Personalized PageRank on entity graph
-USE_CONVEX_FUSION = False    # Option 3: Convex combination replacing RRF
-CONVEX_ALPHA = None          # None = auto-tune on training data
 USE_STRATIFIED_NEGATIVES = False  # Option 19: Stratified hard/medium/easy negatives
 TOP1_GUARANTEE = True        # Option 18: Always predict >= 1 per query
 MULTI_SEED_RUNS = 1          # Option 16: Number of seed runs (1 = disabled)
 
-# LambdaRank params (used when USE_LAMBDARANK=True)
-LAMBDARANK_PARAMS = {
-    "objective": "lambdarank",
-    "metric": "ndcg",
-    "eval_at": [5, 10, 50],
-    "boosting_type": "gbdt",
-    "num_leaves": 31,
-    "learning_rate": 0.02,
-    "feature_fraction": 0.8,
-    "bagging_fraction": 0.8,
-    "bagging_freq": 5,
-    "verbose": -1,
-    "n_estimators": 800,
-    "early_stopping_rounds": 80,
-    "min_child_samples": 20,
-}
-
-# === Embedding (Ollama, legacy) ===
-EMBED_BATCH_SIZE = 32
-EMBED_DIM = 4096

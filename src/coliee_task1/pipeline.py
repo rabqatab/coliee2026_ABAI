@@ -33,14 +33,9 @@ from coliee_task1.config import (
     CROSSENCODER_BATCH_SIZE,
     CROSSENCODER_LR,
     BIENCODER_TOP_K,
-    USE_LAMBDARANK,
-    USE_PPR_FEATURES,
-    USE_CONVEX_FUSION,
-    CONVEX_ALPHA,
     USE_STRATIFIED_NEGATIVES,
     TOP1_GUARANTEE,
     MULTI_SEED_RUNS,
-    LAMBDARANK_PARAMS,
     LGBM_PARAMS,
     RANDOM_SEED,
     CROSSENCODER_MODE,
@@ -61,6 +56,7 @@ from coliee_task1.stages.citation_context import (
 )
 from coliee_task1.stages.bm25 import BM25Index, rrf_fuse
 from coliee_task1.stages.graphrag import GraphRAGLite
+from coliee_task1.stages.meta_learner import compute_lexical_features
 from coliee_task1.utils.metrics import micro_f1
 
 logger = logging.getLogger(__name__)
@@ -150,8 +146,7 @@ def stage2_bm25(
     Returns:
         (rrf_results, bm25_raw_scores, bm25_rrf_scores, context_features)
     """
-    fusion_mode = "convex" if USE_CONVEX_FUSION else "RRF"
-    logger.info("=== Stage 2: Multi-view BM25 Retrieval (%s) ===", fusion_mode)
+    logger.info("=== Stage 2: Multi-view BM25 Retrieval (RRF) ===")
     t0 = time.time()
 
     # Build BM25 index over full clean corpus
@@ -159,21 +154,6 @@ def stage2_bm25(
     texts = [clean_corpus[did] for did in doc_ids]
     bm25 = BM25Index()
     bm25.fit(doc_ids, texts)
-
-    # Auto-tune convex alpha if needed
-    convex_alpha = CONVEX_ALPHA
-    if USE_CONVEX_FUSION and convex_alpha is None and labels is not None:
-        from coliee_task1.stages.bm25 import tune_convex_alpha
-        query_texts = {qid: clean_corpus[qid] for qid in query_ids if qid in clean_corpus}
-        ctx_texts_map = {}
-        for qid in query_ids:
-            dc = contexts.get(qid)
-            ctx_texts_map[qid] = [c.text for c in dc.contexts] if dc else []
-        convex_alpha = tune_convex_alpha(
-            bm25, query_texts, ctx_texts_map, labels, top_k=BM25_TOP_K,
-        )
-    elif USE_CONVEX_FUSION and convex_alpha is None:
-        convex_alpha = 0.5  # default if no labels for tuning
 
     rrf_results = {}
     bm25_raw_scores: dict[str, dict[str, float]] = {}
@@ -188,22 +168,13 @@ def stage2_bm25(
         dc = contexts.get(qid)
         ctx_texts = [c.text for c in dc.contexts] if dc else []
 
-        # Multi-view BM25 (RRF or convex fusion)
+        # Multi-view BM25 with RRF fusion
         full_text = clean_corpus[qid]
-        if USE_CONVEX_FUSION:
-            fused = bm25.query_multiview_convex(
-                full_text=full_text,
-                context_windows=ctx_texts,
-                alpha=convex_alpha,
-                top_k=BM25_TOP_K,
-                exclude_id=qid,
-            )
-        else:
-            fused = bm25.query_multiview(
-                full_text=full_text,
-                context_windows=ctx_texts,
-                exclude_id=qid,
-            )
+        fused = bm25.query_multiview(
+            full_text=full_text,
+            context_windows=ctx_texts,
+            exclude_id=qid,
+        )
         rrf_results[qid] = fused
 
         # Also get raw BM25 scores for the full document
@@ -428,12 +399,11 @@ def stage5_graphrag(
 
     Returns {(query_id, candidate_id): {feature_name: value}}
     """
-    ppr_str = " + PPR" if USE_PPR_FEATURES else ""
-    logger.info("=== Stage 5: GraphRAG Lite%s ===", ppr_str)
+    logger.info("=== Stage 5: GraphRAG Lite ===")
     t0 = time.time()
 
     grag = GraphRAGLite()
-    grag.fit(clean_corpus, compute_ppr=USE_PPR_FEATURES)
+    grag.fit(clean_corpus)
 
     graphrag_features: dict[tuple[str, str], dict[str, float]] = {}
     for qid in query_ids:
@@ -578,104 +548,6 @@ def stage5_5_gnn(
     return gnn_scores
 
 
-def compute_lexical_features(
-    clean_corpus: dict[str, str],
-    candidate_pool: dict[str, list[str]],
-) -> dict[tuple[str, str], dict[str, float]]:
-    """Compute lexical features for all (query, candidate) pairs.
-
-    Features: tfidf_cosine, jaccard, shared_bigrams, length_ratio, shared_legal_terms.
-    These are the baseline's strongest features, ported into the pipeline.
-    """
-    from sklearn.feature_extraction.text import TfidfVectorizer
-    from coliee_task1.stages.bm25 import tokenize
-
-    logger.info("Computing lexical features ...")
-    t0 = time.time()
-
-    all_doc_ids = sorted(clean_corpus.keys())
-    all_texts = [clean_corpus[d] for d in all_doc_ids]
-    id_to_idx = {d: i for i, d in enumerate(all_doc_ids)}
-
-    # TF-IDF matrix
-    vectorizer = TfidfVectorizer(
-        max_features=50000, sublinear_tf=True, stop_words="english", norm="l2",
-    )
-    tfidf_matrix = vectorizer.fit_transform(all_texts)
-    logger.info("  TF-IDF matrix: %s", tfidf_matrix.shape)
-
-    # Pre-compute token/bigram sets and word counts
-    token_sets: dict[str, set] = {}
-    bigram_sets: dict[str, set] = {}
-    word_counts: dict[str, int] = {}
-    for did in all_doc_ids:
-        tokens = tokenize(clean_corpus[did])
-        token_sets[did] = set(tokens)
-        bigram_sets[did] = set(zip(tokens[:-1], tokens[1:])) if len(tokens) > 1 else set()
-        word_counts[did] = len(tokens)
-
-    legal_terms = {
-        "judicial", "review", "reasonable", "standard", "evidence", "burden",
-        "proof", "procedural", "fairness", "immigration", "refugee", "patent",
-        "charter", "rights", "freedoms", "appeal", "dismissed", "allowed",
-        "applicant", "respondent", "minister", "officer", "tribunal", "board",
-        "decision", "finding", "conclusion", "analysis", "statute", "section",
-        "subsection", "paragraph", "precedent", "principle", "test", "factors",
-        "consideration", "discretion", "jurisdiction", "natural", "justice",
-        "credibility", "assessment",
-    }
-
-    features: dict[tuple[str, str], dict[str, float]] = {}
-    n_pairs = 0
-
-    for qid, candidates in candidate_pool.items():
-        if qid not in id_to_idx:
-            continue
-        q_vec = tfidf_matrix[id_to_idx[qid]]
-        q_tokens = token_sets.get(qid, set())
-        q_bigrams = bigram_sets.get(qid, set())
-        q_wc = word_counts.get(qid, 0)
-        q_legal = q_tokens & legal_terms
-
-        for cid in candidates:
-            if cid not in id_to_idx:
-                continue
-
-            # TF-IDF cosine (sparse dot product)
-            c_vec = tfidf_matrix[id_to_idx[cid]]
-            tfidf_cos = float((q_vec @ c_vec.T).toarray()[0, 0])
-
-            # Jaccard word overlap
-            c_tokens = token_sets.get(cid, set())
-            union_size = len(q_tokens | c_tokens)
-            jaccard = len(q_tokens & c_tokens) / union_size if union_size > 0 else 0.0
-
-            # Shared bigrams Jaccard
-            c_bigrams = bigram_sets.get(cid, set())
-            bi_union = len(q_bigrams | c_bigrams)
-            bi_jaccard = len(q_bigrams & c_bigrams) / bi_union if bi_union > 0 else 0.0
-
-            # Length ratio
-            c_wc = word_counts.get(cid, 0)
-            length_ratio = min(q_wc, c_wc) / max(q_wc, c_wc) if max(q_wc, c_wc) > 0 else 0.0
-
-            # Shared legal terms
-            c_legal = c_tokens & legal_terms
-            shared_legal = len(q_legal & c_legal)
-
-            features[(qid, cid)] = {
-                "tfidf_cosine": tfidf_cos,
-                "jaccard": jaccard,
-                "shared_bigrams": bi_jaccard,
-                "length_ratio": length_ratio,
-                "shared_legal_terms": float(shared_legal),
-            }
-            n_pairs += 1
-
-    logger.info("  Lexical features: %d pairs in %.1f seconds", n_pairs, time.time() - t0)
-    return features
-
-
 def stage6_meta_learner(
     labels: dict[str, list[str]],
     query_ids: list[str],
@@ -746,8 +618,7 @@ def stage6_meta_learner(
         reasoning_scores=reasoning_scores,
     )
 
-    # Select LightGBM params based on objective flag
-    lgbm_params = LAMBDARANK_PARAMS.copy() if USE_LAMBDARANK else LGBM_PARAMS.copy()
+    lgbm_params = LGBM_PARAMS.copy()
 
     min_per_query = 1 if TOP1_GUARANTEE else 0
 
@@ -1129,43 +1000,3 @@ def run_predict_pipeline(
     return predictions
 
 
-def main():
-    import argparse
-
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    )
-
-    parser = argparse.ArgumentParser(description="Option C Pipeline")
-    parser.add_argument(
-        "mode",
-        choices=["train", "predict"],
-        help="Pipeline mode: 'train' for CV training, 'predict' for test set",
-    )
-    parser.add_argument(
-        "--output", type=Path, default=None,
-        help="Output path for predictions (predict mode only)",
-    )
-    parser.add_argument(
-        "--no-finetune", action="store_true",
-        help="Skip fine-tuning neural models (CPU-friendly mode). "
-             "Uses base bi-encoder and skips cross-encoder training.",
-    )
-    parser.add_argument(
-        "--no-cache", action="store_true",
-        help="Disable stage caching (recompute everything from scratch).",
-    )
-    args = parser.parse_args()
-
-    if args.mode == "train":
-        run_train_pipeline(
-            finetune=not args.no_finetune,
-            use_cache=not args.no_cache,
-        )
-    else:
-        run_predict_pipeline(output_path=args.output)
-
-
-if __name__ == "__main__":
-    main()
