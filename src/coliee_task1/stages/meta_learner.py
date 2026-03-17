@@ -494,6 +494,104 @@ def train_meta_learner(
     return models, best_threshold, cv_metrics
 
 
+def compute_lexical_features(
+    clean_corpus: dict[str, str],
+    candidate_pool: dict[str, list[str]],
+) -> dict[tuple[str, str], dict[str, float]]:
+    """Compute lexical features for all (query, candidate) pairs.
+
+    Features: tfidf_cosine, jaccard, shared_bigrams, length_ratio, shared_legal_terms.
+    These are the baseline's strongest features, ported into the pipeline.
+    """
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from coliee_task1.stages.bm25 import tokenize
+
+    logger.info("Computing lexical features ...")
+    t0_lex = __import__("time").time()
+
+    all_doc_ids = sorted(clean_corpus.keys())
+    all_texts = [clean_corpus[d] for d in all_doc_ids]
+    id_to_idx = {d: i for i, d in enumerate(all_doc_ids)}
+
+    # TF-IDF matrix
+    vectorizer = TfidfVectorizer(
+        max_features=50000, sublinear_tf=True, stop_words="english", norm="l2",
+    )
+    tfidf_matrix = vectorizer.fit_transform(all_texts)
+    logger.info("  TF-IDF matrix: %s", tfidf_matrix.shape)
+
+    # Pre-compute token/bigram sets and word counts
+    token_sets: dict[str, set] = {}
+    bigram_sets: dict[str, set] = {}
+    word_counts: dict[str, int] = {}
+    for did in all_doc_ids:
+        tokens = tokenize(clean_corpus[did])
+        token_sets[did] = set(tokens)
+        bigram_sets[did] = set(zip(tokens[:-1], tokens[1:])) if len(tokens) > 1 else set()
+        word_counts[did] = len(tokens)
+
+    legal_terms = {
+        "judicial", "review", "reasonable", "standard", "evidence", "burden",
+        "proof", "procedural", "fairness", "immigration", "refugee", "patent",
+        "charter", "rights", "freedoms", "appeal", "dismissed", "allowed",
+        "applicant", "respondent", "minister", "officer", "tribunal", "board",
+        "decision", "finding", "conclusion", "analysis", "statute", "section",
+        "subsection", "paragraph", "precedent", "principle", "test", "factors",
+        "consideration", "discretion", "jurisdiction", "natural", "justice",
+        "credibility", "assessment",
+    }
+
+    features: dict[tuple[str, str], dict[str, float]] = {}
+    n_pairs = 0
+
+    for qid, candidates in candidate_pool.items():
+        if qid not in id_to_idx:
+            continue
+        q_vec = tfidf_matrix[id_to_idx[qid]]
+        q_tokens = token_sets.get(qid, set())
+        q_bigrams = bigram_sets.get(qid, set())
+        q_wc = word_counts.get(qid, 0)
+        q_legal = q_tokens & legal_terms
+
+        for cid in candidates:
+            if cid not in id_to_idx:
+                continue
+
+            # TF-IDF cosine (sparse dot product)
+            c_vec = tfidf_matrix[id_to_idx[cid]]
+            tfidf_cos = float((q_vec @ c_vec.T).toarray()[0, 0])
+
+            # Jaccard word overlap
+            c_tokens = token_sets.get(cid, set())
+            union_size = len(q_tokens | c_tokens)
+            jaccard = len(q_tokens & c_tokens) / union_size if union_size > 0 else 0.0
+
+            # Shared bigrams Jaccard
+            c_bigrams = bigram_sets.get(cid, set())
+            bi_union = len(q_bigrams | c_bigrams)
+            bi_jaccard = len(q_bigrams & c_bigrams) / bi_union if bi_union > 0 else 0.0
+
+            # Length ratio
+            c_wc = word_counts.get(cid, 0)
+            length_ratio = min(q_wc, c_wc) / max(q_wc, c_wc) if max(q_wc, c_wc) > 0 else 0.0
+
+            # Shared legal terms
+            c_legal = c_tokens & legal_terms
+            shared_legal = len(q_legal & c_legal)
+
+            features[(qid, cid)] = {
+                "tfidf_cosine": tfidf_cos,
+                "jaccard": jaccard,
+                "shared_bigrams": bi_jaccard,
+                "length_ratio": length_ratio,
+                "shared_legal_terms": float(shared_legal),
+            }
+            n_pairs += 1
+
+    logger.info("  Lexical features: %d pairs in %.1f seconds", n_pairs, __import__("time").time() - t0_lex)
+    return features
+
+
 def predict(
     models: list[lgb.Booster],
     df: pd.DataFrame,
