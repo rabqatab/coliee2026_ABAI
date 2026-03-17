@@ -19,7 +19,6 @@ This is a competition project for **COLIEE 2026** (Competition on Legal Informat
 
 - Python 3.12, managed via `uv`
 - **IMPORTANT:** Always use `uv run` to execute Python — never use bare `python` or `python3` commands. The `uv` environment must be used for all execution to ensure correct dependencies.
-- Interactive notebooks use **marimo** (not Jupyter)
 - No test framework or linter is currently configured
 
 ### Common Commands
@@ -27,7 +26,6 @@ This is a competition project for **COLIEE 2026** (Competition on Legal Informat
 ```bash
 uv sync                              # Install dependencies from uv.lock
 uv add <package>                     # Add a dependency
-uv run marimo edit notebooks/<file>.py   # Open a marimo notebook for editing
 uv run python <script>.py            # Run a script
 uv run python -m coliee_task1 train         # Run full training pipeline
 uv run python -m coliee_task1 predict       # Run prediction on test queries
@@ -64,25 +62,12 @@ src/
     stages/                # Pipeline stage modules (8 stages)
     utils/                 # Shared utilities (metrics, normalization, regex)
   baselines/               # Baseline implementations for comparison
-notebooks/                 # Marimo notebooks for EDA
 scripts/                   # One-off experiment scripts
-docs/                      # Competition rules, reports, plans
-  analysis/                # Analysis reports with plots
 data/                      # Competition corpus (not in git)
 output/                    # Model weights, caches, submissions (not in git)
+docs/                      # Local-only: competition rules, reports, plans (not in git)
 tests/                     # Test suite
 ```
-
-All generated plots go in `docs/analysis/plots/`. Each analysis has its own subdirectory under `docs/analysis/` with a `README.md` report.
-
-## Key Reference Documents
-
-- `docs/COLIEE2026_Competition_Rules.md` — full competition rules for Tasks 1 & 2
-- `docs/COLIEE2026_Data_Structure.md` — detailed corpus format with examples
-- `docs/COLIEE_APPROACHES_REPORT.md` — literature review of winning approaches from prior years
-- `docs/LITERATURE_REVIEW.md` — additional research references
-- `docs/analysis/eda/` — EDA report and corpus noise analysis
-- `docs/analysis/signal_validation/` — Task 1 label signal validation report
 
 ## Domain Context
 

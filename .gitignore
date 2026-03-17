@@ -12,6 +12,14 @@ wheels/
 # Data (too large for git)
 data/
 
+# Documentation & analysis (kept locally, not tracked)
+docs/
+notebooks/
+__marimo__/
+
 # Output artifacts
 output/
 .worktrees/
+
+# Sensitive files
+*.pdf
