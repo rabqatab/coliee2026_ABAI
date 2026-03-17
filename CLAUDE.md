@@ -29,6 +29,9 @@ uv sync                              # Install dependencies from uv.lock
 uv add <package>                     # Add a dependency
 uv run marimo edit notebooks/<file>.py   # Open a marimo notebook for editing
 uv run python <script>.py            # Run a script
+uv run python -m coliee_task1 train         # Run full training pipeline
+uv run python -m coliee_task1 predict       # Run prediction on test queries
+uv run python -m coliee_task1 evaluate -p output/predictions.json -g data/task1/task1_train_labels_2026.json
 ```
 
 ## Data Layout
@@ -53,14 +56,21 @@ All data lives under `data/` and must not be committed to git.
 ## Repository Structure
 
 ```
-notebooks/             # Marimo notebooks for EDA and experimentation
-src/                   # Source code (analysis scripts, pipeline modules)
-docs/                  # Competition rules, literature review, approaches report
-docs/analysis/         # Analysis reports, each in its own subdirectory
-  plots/               # All generated visualization PNGs (shared across analyses)
-  eda/                 # EDA report + corpus noise analysis
-  signal_validation/   # Label signal validation report
-data/                  # Competition corpus (not in git)
+src/
+  coliee_task1/            # Main pipeline package
+    config.py              # Central configuration
+    cli.py                 # CLI entry point (train/predict/evaluate)
+    pipeline.py            # Pipeline orchestration
+    stages/                # Pipeline stage modules (8 stages)
+    utils/                 # Shared utilities (metrics, normalization, regex)
+  baselines/               # Baseline implementations for comparison
+notebooks/                 # Marimo notebooks for EDA
+scripts/                   # One-off experiment scripts
+docs/                      # Competition rules, reports, plans
+  analysis/                # Analysis reports with plots
+data/                      # Competition corpus (not in git)
+output/                    # Model weights, caches, submissions (not in git)
+tests/                     # Test suite
 ```
 
 All generated plots go in `docs/analysis/plots/`. Each analysis has its own subdirectory under `docs/analysis/` with a `README.md` report.
