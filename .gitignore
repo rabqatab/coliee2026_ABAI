@@ -21,5 +21,6 @@ __marimo__/
 output/
 .worktrees/
 
-# Sensitive files
+# Sensitive / personal files
 *.pdf
+CLAUDE.md
