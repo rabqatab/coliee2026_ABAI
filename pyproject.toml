@@ -1,7 +1,7 @@
 [project]
 name = "coliee2026"
 version = "0.1.0"
-description = "Add your description here"
+description = "COLIEE 2026 Task 1: Legal Case Retrieval Pipeline"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -29,6 +29,9 @@ dependencies = [
     "tqdm>=4.67.3",
     "transformers>=5.3.0",
 ]
+
+[project.scripts]
+coliee-task1 = "coliee_task1.cli:main"
 
 [build-system]
 requires = ["hatchling"]
