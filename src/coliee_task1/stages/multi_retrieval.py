@@ -20,7 +20,7 @@ if not hasattr(_tutils, "is_torch_fx_available"):
 
 import numpy as np
 
-from graphrag.config import (
+from coliee_task1.config import (
     BGE_M3_MODEL,
     BGE_M3_BATCH_SIZE,
     BGE_M3_MAX_LENGTH,

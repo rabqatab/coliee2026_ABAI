@@ -16,13 +16,13 @@ import igraph as ig
 import leidenalg
 import numpy as np
 
-from graphrag.config import (
+from coliee_task1.config import (
     BIPARTITE_WEIGHTS,
     LEIDEN_RESOLUTIONS,
     DOMAIN_KEYWORDS,
 )
-from graphrag.extract_regex import extract_statutes, extract_judges, extract_outcome
-from graphrag.normalize import normalize_statute, normalize_judge
+from coliee_task1.utils.extract_regex import extract_statutes, extract_judges, extract_outcome
+from coliee_task1.utils.normalize import normalize_statute, normalize_judge
 
 logger = logging.getLogger(__name__)
 

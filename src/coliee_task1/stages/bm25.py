@@ -12,7 +12,7 @@ from typing import Sequence
 import numpy as np
 from scipy import sparse
 
-from graphrag.config import BM25_TOP_K, BM25_CONTEXT_TOP_K, RRF_K
+from coliee_task1.config import BM25_TOP_K, BM25_CONTEXT_TOP_K, RRF_K
 
 logger = logging.getLogger(__name__)
 

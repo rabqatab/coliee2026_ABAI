@@ -9,7 +9,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from graphrag.config import (
+from coliee_task1.config import (
     CONTEXT_WINDOW_WORDS,
     CONTEXT_MERGE_DISTANCE,
     CONTEXT_MIN_LENGTH,

@@ -18,7 +18,7 @@ import time
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from graphrag.config import (
+from coliee_task1.config import (
     REASONING_MODEL,
     REASONING_MAX_LENGTH,
     REASONING_TOP_K,

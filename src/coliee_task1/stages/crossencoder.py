@@ -21,7 +21,7 @@ from transformers import (
     get_linear_schedule_with_warmup,
 )
 
-from graphrag.config import (
+from coliee_task1.config import (
     CROSSENCODER_MODEL,
     CROSSENCODER_LR,
     CROSSENCODER_EPOCHS,

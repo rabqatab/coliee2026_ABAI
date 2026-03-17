@@ -20,7 +20,7 @@ from pathlib import Path
 
 import numpy as np
 
-from graphrag.config import (
+from coliee_task1.config import (
     TRAIN_DOCS_DIR,
     TEST_DOCS_DIR,
     TRAIN_LABELS,
@@ -53,15 +53,15 @@ from graphrag.config import (
     USE_REASONING_RERANKER,
     USE_SYNTHETIC_DATA,
 )
-from graphrag.preprocess import preprocess, load_corpus
-from graphrag.citation_context import (
+from coliee_task1.stages.preprocess import preprocess, load_corpus
+from coliee_task1.stages.citation_context import (
     load_raw_corpus,
     extract_all_contexts,
     DocumentContexts,
 )
-from graphrag.bm25 import BM25Index, rrf_fuse
-from graphrag.graphrag_lite import GraphRAGLite
-from graphrag.metrics import micro_f1
+from coliee_task1.stages.bm25 import BM25Index, rrf_fuse
+from coliee_task1.stages.graphrag import GraphRAGLite
+from coliee_task1.utils.metrics import micro_f1
 
 logger = logging.getLogger(__name__)
 
@@ -163,7 +163,7 @@ def stage2_bm25(
     # Auto-tune convex alpha if needed
     convex_alpha = CONVEX_ALPHA
     if USE_CONVEX_FUSION and convex_alpha is None and labels is not None:
-        from graphrag.bm25 import tune_convex_alpha
+        from coliee_task1.stages.bm25 import tune_convex_alpha
         query_texts = {qid: clean_corpus[qid] for qid in query_ids if qid in clean_corpus}
         ctx_texts_map = {}
         for qid in query_ids:
@@ -251,13 +251,13 @@ def stage3_biencoder(
     logger.info("=== Stage 3: Bi-Encoder %s ===", "Training + Inference" if train else "Inference")
     t0 = time.time()
 
-    from graphrag.finetune_biencoder import (
+    from coliee_task1.stages.biencoder import (
         finetune_biencoder,
         encode_corpus,
         biencoder_retrieve,
     )
     from sentence_transformers import SentenceTransformer
-    from graphrag.config import BIENCODER_MODEL
+    from coliee_task1.config import BIENCODER_MODEL
 
     model_path = MODELS_DIR / "biencoder" / "final"
 
@@ -322,12 +322,12 @@ def stage4_crossencoder(
                 "Training + Inference" if train else "Inference", mode)
     t0 = time.time()
 
-    from graphrag.finetune_crossencoder import (
+    from coliee_task1.stages.crossencoder import (
         finetune_crossencoder,
         crossencoder_rerank,
     )
     from transformers import AutoModelForSequenceClassification, AutoTokenizer
-    from graphrag.config import CROSSENCODER_MODEL, CROSSENCODER_TOP_K
+    from coliee_task1.config import CROSSENCODER_MODEL, CROSSENCODER_TOP_K
     import torch
     import json as json_mod
 
@@ -455,7 +455,7 @@ def stage3_multi_retrieval(
 
     Returns {query_id: {signal: {candidate_id: score}}}.
     """
-    from graphrag.multi_retrieval import encode_corpus_m3, score_candidates_m3
+    from coliee_task1.stages.multi_retrieval import encode_corpus_m3, score_candidates_m3
 
     logger.info("=== Stage 3 (alt): BGE-M3 Multi-Signal Retrieval ===")
     t0 = time.time()
@@ -477,7 +477,7 @@ def stage4_5_reasoning(
     rrf_results: dict[str, list[tuple[str, float]]],
 ) -> dict[str, dict[str, float]]:
     """Stage 4.5: Reasoning reranker with chain-of-thought."""
-    from graphrag.reasoning_reranker import batch_reasoning_rerank
+    from coliee_task1.stages.reasoning_reranker import batch_reasoning_rerank
 
     logger.info("=== Stage 4.5: Reasoning Reranker ===")
     return batch_reasoning_rerank(query_ids, raw_corpus, rrf_results)
@@ -496,16 +496,16 @@ def stage5_5_gnn(
 
     Returns {query_id: {candidate_id: gnn_score}}.
     """
-    from graphrag.gnn_reranker import (
+    from coliee_task1.stages.gnn import (
         build_corpus_graph,
         build_node_features,
         train_gnn_reranker,
         gnn_rerank,
     )
-    from graphrag.config import GNN_K_NEIGHBORS
-    from graphrag.finetune_biencoder import encode_corpus
+    from coliee_task1.config import GNN_K_NEIGHBORS
+    from coliee_task1.stages.biencoder import encode_corpus
     from sentence_transformers import SentenceTransformer
-    from graphrag.config import BIENCODER_MODEL, MODELS_DIR as MDIR
+    from coliee_task1.config import BIENCODER_MODEL, MODELS_DIR as MDIR
 
     logger.info("=== Stage 5.5: GNN Score Refinement ===")
     t0 = time.time()
@@ -588,7 +588,7 @@ def compute_lexical_features(
     These are the baseline's strongest features, ported into the pipeline.
     """
     from sklearn.feature_extraction.text import TfidfVectorizer
-    from graphrag.bm25 import tokenize
+    from coliee_task1.stages.bm25 import tokenize
 
     logger.info("Computing lexical features ...")
     t0 = time.time()
@@ -700,7 +700,7 @@ def stage6_meta_learner(
     logger.info("=== Stage 6: Meta-Learner %s ===", "Training" if train else "Inference")
     t0 = time.time()
 
-    from graphrag.meta_learner import (
+    from coliee_task1.stages.meta_learner import (
         build_feature_matrix,
         train_meta_learner,
         predict,
@@ -801,7 +801,7 @@ def stage6_meta_learner(
 
         # Re-optimize threshold on full pool predictions (real pos/neg ratio)
         # Use ALL models from multi-seed ensemble
-        from graphrag.metrics import optimize_threshold as opt_thresh
+        from coliee_task1.utils.metrics import optimize_threshold as opt_thresh
         full_scores = np.zeros(len(df_full))
         for m in all_models:
             full_scores += m.predict(df_full[FEATURE_COLS].values)
@@ -935,7 +935,7 @@ def run_train_pipeline(
             ]
             logger.info("Loaded %d synthetic pairs from cache", len(synthetic_pairs))
         else:
-            from graphrag.synthetic_data import generate_synthetic_pairs
+            from coliee_task1.utils.synthetic_data import generate_synthetic_pairs
             synthetic_pairs = generate_synthetic_pairs(raw_corpus, labels)
 
     # Build BM25 index for downstream stages (hard negative mining)

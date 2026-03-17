@@ -20,8 +20,8 @@ from sentence_transformers import (
 from sentence_transformers.losses import MultipleNegativesRankingLoss
 from sentence_transformers.training_args import BatchSamplers
 
-from graphrag.bm25 import BM25Index
-from graphrag.config import (
+from coliee_task1.stages.bm25 import BM25Index
+from coliee_task1.config import (
     BIENCODER_MODEL,
     BIENCODER_LORA_RANK,
     BIENCODER_LORA_ALPHA,

@@ -13,13 +13,13 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import GroupKFold
 
-from graphrag.config import (
+from coliee_task1.config import (
     LGBM_PARAMS,
     N_FOLDS,
     RANDOM_SEED,
     MODELS_DIR,
 )
-from graphrag.metrics import micro_f1, scores_to_predictions, optimize_threshold
+from coliee_task1.utils.metrics import micro_f1, scores_to_predictions, optimize_threshold
 
 logger = logging.getLogger(__name__)
 
@@ -171,7 +171,7 @@ def assemble_features(
 
     # BGE-M3 multi-signal features
     if multi_scores is not None:
-        from graphrag.multi_retrieval import extract_multi_features
+        from coliee_task1.stages.multi_retrieval import extract_multi_features
         m3_feats = extract_multi_features(query_id, candidate_id, multi_scores)
         feats.update(m3_feats)
 

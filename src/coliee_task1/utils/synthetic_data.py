@@ -19,7 +19,7 @@ from pathlib import Path
 
 import requests
 
-from graphrag.config import (
+from coliee_task1.config import (
     SYNTHETIC_LLM_MODEL,
     SYNTHETIC_N_PAIRS,
     SYNTHETIC_MAX_WORDS,

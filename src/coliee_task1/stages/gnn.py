@@ -21,7 +21,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from graphrag.config import (
+from coliee_task1.config import (
     GNN_HIDDEN_DIM,
     GNN_NUM_LAYERS,
     GNN_HEADS,
