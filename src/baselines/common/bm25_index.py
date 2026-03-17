@@ -8,7 +8,7 @@ import logging
 import time
 from pathlib import Path
 
-from graphrag.bm25 import BM25Index
+from coliee_task1.stages.bm25 import BM25Index
 
 logger = logging.getLogger(__name__)
 

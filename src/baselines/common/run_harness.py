@@ -8,7 +8,7 @@ import pandas as pd
 
 from baselines.common.base_model import BaselineModel
 from baselines.common.data_loader import Dataset
-from graphrag.metrics import micro_f1, optimize_threshold, scores_to_predictions
+from coliee_task1.utils.metrics import micro_f1, optimize_threshold, scores_to_predictions
 
 logger = logging.getLogger(__name__)
 

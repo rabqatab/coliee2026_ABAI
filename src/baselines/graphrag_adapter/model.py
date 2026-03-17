@@ -11,8 +11,8 @@ import lightgbm as lgb
 import numpy as np
 
 from baselines.common.base_model import BaselineModel
-from graphrag.bm25 import BM25Index
-from graphrag.graphrag_lite import GraphRAGLite
+from coliee_task1.stages.bm25 import BM25Index
+from coliee_task1.stages.graphrag import GraphRAGLite
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +62,7 @@ class GraphRAGAdapter(BaselineModel):
 
             if self._fold_models:
                 # Check feature count matches FEATURE_COLS
-                from graphrag.meta_learner import FEATURE_COLS
+                from coliee_task1.stages.meta_learner import FEATURE_COLS
                 expected = self._fold_models[0].num_feature()
                 if expected != len(FEATURE_COLS):
                     logger.warning(
@@ -96,7 +96,7 @@ class GraphRAGAdapter(BaselineModel):
 
     def _predict_with_meta_learner(self, query_id, candidates, corpus):
         """Predict using pre-trained LightGBM fold ensemble."""
-        from graphrag.meta_learner import FEATURE_COLS
+        from coliee_task1.stages.meta_learner import FEATURE_COLS
 
         features = []
         cand_ids = []

@@ -4,8 +4,8 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
-from graphrag.config import TRAIN_DOCS_DIR, TEST_DOCS_DIR, TRAIN_LABELS
-from graphrag.preprocess import preprocess, load_corpus
+from coliee_task1.config import TRAIN_DOCS_DIR, TEST_DOCS_DIR, TRAIN_LABELS
+from coliee_task1.stages.preprocess import preprocess, load_corpus
 
 logger = logging.getLogger(__name__)
 

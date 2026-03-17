@@ -1,6 +1,6 @@
 """Vanilla BM25 baseline — establishes the retrieval floor."""
 from baselines.common.base_model import BaselineModel
-from graphrag.bm25 import BM25Index
+from coliee_task1.stages.bm25 import BM25Index
 
 
 class VanillaBM25(BaselineModel):

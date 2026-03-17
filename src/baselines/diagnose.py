@@ -5,7 +5,7 @@ import numpy as np
 
 from baselines.common.data_loader import load_dataset
 from baselines.common.bm25_index import build_shared_bm25
-from graphrag.metrics import micro_f1, scores_to_predictions
+from coliee_task1.utils.metrics import micro_f1, scores_to_predictions
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger()
