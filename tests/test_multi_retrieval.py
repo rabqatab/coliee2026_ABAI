@@ -5,7 +5,7 @@ import numpy as np
 
 def test_fuse_scores_combines_signals():
     """Verify weighted score fusion across dense, sparse, and ColBERT signals."""
-    from graphrag.multi_retrieval import fuse_multi_scores
+    from coliee_task1.stages.multi_retrieval import fuse_multi_scores
 
     dense = {"doc1": 0.8, "doc2": 0.5, "doc3": 0.3}
     sparse = {"doc1": 0.6, "doc2": 0.9, "doc3": 0.1}
@@ -22,7 +22,7 @@ def test_fuse_scores_combines_signals():
 
 def test_fuse_scores_handles_missing_keys():
     """If a doc is in one signal but not another, treat missing as 0."""
-    from graphrag.multi_retrieval import fuse_multi_scores
+    from coliee_task1.stages.multi_retrieval import fuse_multi_scores
 
     dense = {"doc1": 0.8}
     sparse = {"doc1": 0.6, "doc2": 0.5}
@@ -38,7 +38,7 @@ def test_fuse_scores_handles_missing_keys():
 
 def test_extract_multi_features():
     """Verify per-pair feature extraction returns all 3 signals + fused."""
-    from graphrag.multi_retrieval import extract_multi_features
+    from coliee_task1.stages.multi_retrieval import extract_multi_features
 
     scores = {
         "q1": {

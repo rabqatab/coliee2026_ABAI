@@ -1,6 +1,6 @@
 """Tests for regex-based entity extraction."""
 import pytest
-from graphrag.extract_regex import extract_statutes, extract_judges, extract_outcome
+from coliee_task1.utils.extract_regex import extract_statutes, extract_judges, extract_outcome
 
 
 class TestExtractStatutes:

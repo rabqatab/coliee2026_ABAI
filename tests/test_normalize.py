@@ -1,6 +1,6 @@
 """Tests for entity normalization."""
 import pytest
-from graphrag.normalize import normalize_statute, normalize_judge, merge_regex_llm
+from coliee_task1.utils.normalize import normalize_statute, normalize_judge, merge_regex_llm
 
 
 class TestNormalizeStatute:

@@ -3,7 +3,7 @@
 
 def test_build_reasoning_prompt():
     """Verify prompt construction includes query and candidate text."""
-    from graphrag.reasoning_reranker import build_reasoning_prompt
+    from coliee_task1.stages.reasoning_reranker import build_reasoning_prompt
 
     prompt = build_reasoning_prompt(
         query_text="The applicant seeks judicial review...",
@@ -16,7 +16,7 @@ def test_build_reasoning_prompt():
 
 def test_parse_relevance_score():
     """Verify score extraction from model output."""
-    from graphrag.reasoning_reranker import parse_relevance_score
+    from coliee_task1.stages.reasoning_reranker import parse_relevance_score
 
     output1 = "<think>Both cases deal with immigration...</think>\nRelevant: Yes\nScore: 0.85"
     score1 = parse_relevance_score(output1)
@@ -33,7 +33,7 @@ def test_parse_relevance_score():
 
 def test_parse_relevance_score_yes_no_fallback():
     """When no explicit score but Yes/No present, use fallback scores."""
-    from graphrag.reasoning_reranker import parse_relevance_score
+    from coliee_task1.stages.reasoning_reranker import parse_relevance_score
 
     assert parse_relevance_score("Relevant: Yes\nNo explicit score") == 0.75
     assert parse_relevance_score("Relevant: No\nNo explicit score") == 0.25

@@ -3,7 +3,7 @@
 
 def test_extract_key_facts_prompt():
     """Verify prompt construction for key fact extraction."""
-    from graphrag.synthetic_data import build_extraction_prompt
+    from coliee_task1.utils.synthetic_data import build_extraction_prompt
 
     prompt = build_extraction_prompt(
         "The applicant is a citizen of Iran who sought refugee status..."
@@ -14,7 +14,7 @@ def test_extract_key_facts_prompt():
 
 def test_build_synthetic_pair():
     """Verify synthetic pair construction."""
-    from graphrag.synthetic_data import build_synthetic_pair
+    from coliee_task1.utils.synthetic_data import build_synthetic_pair
 
     pair = build_synthetic_pair(
         query_summary="Immigration case about refugee status from Iran",

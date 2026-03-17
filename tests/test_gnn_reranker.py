@@ -5,7 +5,7 @@ import numpy as np
 
 def test_build_subgraph_extracts_candidates():
     """Subgraph should contain query + all candidates as nodes."""
-    from graphrag.gnn_reranker import build_query_subgraph
+    from coliee_task1.stages.gnn import build_query_subgraph
 
     # Mock corpus graph adjacency (5 nodes)
     adj = {0: [1, 2], 1: [0, 3], 2: [0, 4], 3: [1], 4: [2]}
@@ -23,7 +23,7 @@ def test_build_subgraph_extracts_candidates():
 def test_gnn_forward_produces_scores():
     """GNN model forward pass should produce one score per candidate."""
     import torch
-    from graphrag.gnn_reranker import GNNReranker
+    from coliee_task1.stages.gnn import GNNReranker
 
     model = GNNReranker(input_dim=16, hidden_dim=32, num_layers=2, heads=2)
     # Simulate 5-node subgraph
