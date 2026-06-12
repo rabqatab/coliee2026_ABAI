@@ -55,9 +55,9 @@ CROSSENCODER_LR = 1e-5
 CROSSENCODER_EPOCHS = 3
 CROSSENCODER_BATCH_SIZE = 16
 CROSSENCODER_MAX_LENGTH = 512
-CROSSENCODER_TOP_K = 50  # Rerank top-50 from RRF
-CROSSENCODER_PRUNE_TOP_CONTEXTS = 5  # Top citation contexts per query
-CROSSENCODER_PRUNE_TOP_PARAGRAPHS = 10  # Top paragraphs per candidate
+CROSSENCODER_TOP_K = 100  # Rerank top-100 from RRF (was 50)
+CROSSENCODER_PRUNE_TOP_CONTEXTS = 8   # Top citation contexts per query (was 5)
+CROSSENCODER_PRUNE_TOP_PARAGRAPHS = 15  # Top paragraphs per candidate (was 10)
 CROSSENCODER_MODE = "smart"  # "smart", "longctx", or "passage"
 
 # Long-context cross-encoder (used when CROSSENCODER_MODE="longctx")
@@ -65,6 +65,13 @@ CROSSENCODER_LONG_MODEL = "BAAI/bge-reranker-v2-m3"
 CROSSENCODER_LONG_MAX_LENGTH = 4096
 CROSSENCODER_LONG_BATCH_SIZE = 4
 CROSSENCODER_LONG_LR = 2e-5
+
+# ModernBERT cross-encoder (used when CROSSENCODER_MODE="modernbert")
+CROSSENCODER_MODERNBERT_MODEL = "answerdotai/ModernBERT-large"
+CROSSENCODER_MODERNBERT_MAX_LENGTH = 8192
+CROSSENCODER_MODERNBERT_BATCH_SIZE = 4
+CROSSENCODER_MODERNBERT_LR = 2e-5
+CROSSENCODER_MODERNBERT_WORD_BUDGET = 5000
 
 # === GraphRAG Lite (Stage 5) ===
 BIPARTITE_WEIGHTS = {
@@ -136,7 +143,22 @@ N_FOLDS = 5
 RANDOM_SEED = 42
 
 # === Enhancement Flags (toggle for A/B testing) ===
+USE_QUERY_EXPANSION = False  # Phase 6: LLM query expansion (requires GPU)
+QUERY_EXPANSION_MODEL = "Qwen/Qwen2.5-7B-Instruct"
 USE_STRATIFIED_NEGATIVES = False  # Option 19: Stratified hard/medium/easy negatives
 TOP1_GUARANTEE = True        # Option 18: Always predict >= 1 per query
 MULTI_SEED_RUNS = 1          # Option 16: Number of seed runs (1 = disabled)
+INJECT_GOLD_IN_POOL = False  # Phase 1 fix: disable gold injection to match test distribution
+USE_TEMPORAL_SPLIT = True    # Phase 1 fix: chronological split to match test distribution
+TEMPORAL_VAL_FRACTION = 0.2  # Use newest 20% as validation
+USE_PRF = False              # Phase 6: pseudo relevance feedback
+PRF_N_FEEDBACK = 3           # Number of feedback documents
+PRF_QUERY_WEIGHT = 0.7       # Weight for original query (higher = less feedback influence)
+THRESHOLD_METHOD = "global"  # "global" (fixed t), "adaptive" (score_gap), "evt" (EVT-based)
+
+# === Hybrid First-Stage Retrieval ===
+USE_DENSE_FIRST_STAGE = True   # Phase 2: bi-encoder as parallel first-stage retriever
+DENSE_TOP_K = 200              # Dense retrieval candidates per query
+HYBRID_FUSION = "convex"       # "rrf" or "convex" — fusion method for BM25 + dense
+CONVEX_ALPHA = 0.6             # Weight for BM25 in convex fusion (0.6 = BM25-dominant)
 

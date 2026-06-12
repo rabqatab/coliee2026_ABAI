@@ -213,7 +213,7 @@ def stage3_biencoder(
     labels: dict[str, list[str]] | None = None,
     bm25_index: BM25Index | None = None,
     train: bool = False,
-) -> dict[str, dict[str, float]]:
+) -> tuple[dict[str, dict[str, float]], list[str], np.ndarray]:
     """Stage 3: Bi-encoder retrieval/reranking.
 
     If train=True, fine-tunes the bi-encoder first.
@@ -269,7 +269,7 @@ def stage3_biencoder(
         }
 
     logger.info("Stage 3 complete in %.1f seconds", time.time() - t0)
-    return biencoder_scores
+    return biencoder_scores, doc_ids, embeddings
 
 
 def stage4_crossencoder(
@@ -586,8 +586,11 @@ def stage6_meta_learner(
         for qid in query_ids
     }
 
-    # Add gold positives not already in the RRF pool (critical for recall)
-    if train:
+    # Add gold positives not already in the RRF pool.
+    # WARNING: This creates train/test mismatch — gold won't exist in test pools.
+    # Set INJECT_GOLD_IN_POOL=False (default) for honest training.
+    from coliee_task1.config import INJECT_GOLD_IN_POOL
+    if train and INJECT_GOLD_IN_POOL:
         n_added = 0
         for qid in query_ids:
             gold = set(labels.get(qid, []))
@@ -598,6 +601,14 @@ def stage6_meta_learner(
                     n_added += 1
         if n_added:
             logger.info("Added %d gold positives not in RRF pool", n_added)
+    elif train:
+        # Log how many gold positives are missing (for diagnostics)
+        n_missing = 0
+        for qid in query_ids:
+            gold = set(labels.get(qid, []))
+            pool_set = set(candidate_pool.get(qid, []))
+            n_missing += len(gold - pool_set)
+        logger.info("Gold injection DISABLED: %d gold positives outside RRF pool (unreachable)", n_missing)
 
     # Compute lexical features if corpus is available
     lexical_features = None
@@ -820,13 +831,55 @@ def run_train_pipeline(
     # Stage 3: Bi-encoder
     cached = _load_cache("stage3") if use_cache else None
     if cached is not None:
-        biencoder_scores = cached
+        if isinstance(cached, tuple) and len(cached) == 3:
+            biencoder_scores, biencoder_doc_ids, biencoder_embeddings = cached
+        else:
+            biencoder_scores = cached
+            biencoder_doc_ids, biencoder_embeddings = None, None
     else:
-        biencoder_scores = stage3_biencoder(
+        biencoder_scores, biencoder_doc_ids, biencoder_embeddings = stage3_biencoder(
             clean_corpus, query_ids, rrf_results,
             labels=labels, bm25_index=bm25_index, train=finetune,
         )
-        _save_cache("stage3", biencoder_scores)
+        _save_cache("stage3", (biencoder_scores, biencoder_doc_ids, biencoder_embeddings))
+
+    # === Hybrid First-Stage: Fuse BM25 + Dense Retrieval ===
+    from coliee_task1.config import USE_DENSE_FIRST_STAGE, DENSE_TOP_K, HYBRID_FUSION, CONVEX_ALPHA
+    if USE_DENSE_FIRST_STAGE and biencoder_doc_ids is not None and biencoder_embeddings is not None:
+        from coliee_task1.stages.biencoder import dense_retrieve_full_corpus
+        from coliee_task1.stages.bm25 import hybrid_fuse
+
+        logger.info("=== Hybrid Fusion: BM25 + Dense First-Stage ===")
+        dense_results = dense_retrieve_full_corpus(
+            query_ids, biencoder_doc_ids, biencoder_embeddings, top_k=DENSE_TOP_K,
+        )
+
+        # Convert RRF results to list format for fusion
+        bm25_as_list = {
+            qid: list(rrf_results.get(qid, []))
+            for qid in query_ids
+        }
+        rrf_results = hybrid_fuse(
+            bm25_as_list, dense_results,
+            method=HYBRID_FUSION, alpha=CONVEX_ALPHA,
+            top_k=max(BM25_TOP_K, DENSE_TOP_K),
+        )
+
+        # Update RRF score dict from fused results
+        bm25_rrf = {
+            qid: {did: score for did, score in rrf_results.get(qid, [])}
+            for qid in query_ids
+        }
+
+        # Measure new recall ceiling
+        if labels:
+            total_gold = sum(len(v) for v in labels.values())
+            found_gold = sum(
+                len(set(labels.get(qid, [])) & {did for did, _ in rrf_results.get(qid, [])})
+                for qid in query_ids
+            )
+            logger.info("Hybrid recall ceiling: %d/%d = %.1f%% (was 60.9%% BM25-only)",
+                         found_gold, total_gold, 100.0 * found_gold / max(total_gold, 1))
 
     # Stage 3 (alt): BGE-M3 multi-signal retrieval
     multi_scores = None
@@ -952,9 +1005,37 @@ def run_predict_pipeline(
     )
 
     # Stage 3: Bi-encoder (inference only)
-    biencoder_scores = stage3_biencoder(
+    biencoder_scores, biencoder_doc_ids, biencoder_embeddings = stage3_biencoder(
         clean_corpus, query_ids, rrf_results, train=False,
     )
+
+    # === Hybrid First-Stage: Fuse BM25 + Dense Retrieval ===
+    from coliee_task1.config import USE_DENSE_FIRST_STAGE, DENSE_TOP_K, HYBRID_FUSION, CONVEX_ALPHA
+    if USE_DENSE_FIRST_STAGE and biencoder_doc_ids is not None and biencoder_embeddings is not None:
+        from coliee_task1.stages.biencoder import dense_retrieve_full_corpus
+        from coliee_task1.stages.bm25 import hybrid_fuse
+
+        logger.info("=== Hybrid Fusion: BM25 + Dense First-Stage ===")
+        dense_results = dense_retrieve_full_corpus(
+            query_ids, biencoder_doc_ids, biencoder_embeddings, top_k=DENSE_TOP_K,
+        )
+
+        # Convert RRF results to list format for fusion
+        bm25_as_list = {
+            qid: list(rrf_results.get(qid, []))
+            for qid in query_ids
+        }
+        rrf_results = hybrid_fuse(
+            bm25_as_list, dense_results,
+            method=HYBRID_FUSION, alpha=CONVEX_ALPHA,
+            top_k=max(BM25_TOP_K, DENSE_TOP_K),
+        )
+
+        # Update RRF score dict from fused results
+        bm25_rrf = {
+            qid: {did: score for did, score in rrf_results.get(qid, [])}
+            for qid in query_ids
+        }
 
     # Stage 3 (alt): BGE-M3
     multi_scores = None

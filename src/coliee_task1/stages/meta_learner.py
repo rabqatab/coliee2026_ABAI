@@ -64,6 +64,15 @@ BASE_FEATURE_COLS = [
     # Reasoning reranker features (2) -- when USE_REASONING_RERANKER=True
     "reasoning_score",
     "reasoning_rank",
+    # Cross-stage disagreement features (3)
+    "rank_disagreement_bm25_ce",
+    "rank_disagreement_bi_ce",
+    "ce_score_margin",
+    # Document structure features (4)
+    "query_word_count",
+    "candidate_word_count",
+    "word_count_ratio",
+    "candidate_citation_density",
 ]
 
 # Score distribution features (Option 14) — computed per-query in build_feature_matrix
@@ -170,10 +179,19 @@ def assemble_features(
     feats["max_context_bm25"] = c_ctx.get("max_score", 0.0)
 
     # BGE-M3 multi-signal features
+    # multi_scores structure: {query_id: {"dense": {cid: score}, "sparse": {cid: score},
+    #                                      "colbert": {cid: score}, "fused": {cid: score}}}
     if multi_scores is not None:
-        from coliee_task1.stages.multi_retrieval import extract_multi_features
-        m3_feats = extract_multi_features(query_id, candidate_id, multi_scores)
-        feats.update(m3_feats)
+        q_m3 = multi_scores.get(query_id, {})
+        feats["m3_dense_score"] = q_m3.get("dense", {}).get(candidate_id, 0.0)
+        feats["m3_sparse_score"] = q_m3.get("sparse", {}).get(candidate_id, 0.0)
+        feats["m3_colbert_score"] = q_m3.get("colbert", {}).get(candidate_id, 0.0)
+        feats["m3_fused_score"] = q_m3.get("fused", {}).get(candidate_id, 0.0)
+    else:
+        feats["m3_dense_score"] = 0.0
+        feats["m3_sparse_score"] = 0.0
+        feats["m3_colbert_score"] = 0.0
+        feats["m3_fused_score"] = 0.0
 
     # GNN reranker features
     if gnn_scores is not None:
@@ -197,6 +215,36 @@ def assemble_features(
             feats["reasoning_rank"] = float(rank_map.get(candidate_id, len(reas_q) + 1))
         else:
             feats["reasoning_rank"] = 999.0
+
+    # Cross-stage rank disagreement
+    q_rrf = bm25_rrf_scores.get(query_id, {})
+    if q_rrf:
+        sorted_rrf = sorted(q_rrf.items(), key=lambda x: -x[1])
+        rrf_rank_map = {cid: i + 1 for i, (cid, _) in enumerate(sorted_rrf)}
+        bm25_rank_val = float(rrf_rank_map.get(candidate_id, len(q_rrf) + 1))
+    else:
+        bm25_rank_val = 999.0
+
+    ce_rank_val = feats.get("crossencoder_rank", 999.0)
+    bi_rank_val = feats.get("biencoder_rank", 999.0)
+    feats["rank_disagreement_bm25_ce"] = abs(bm25_rank_val - ce_rank_val)
+    feats["rank_disagreement_bi_ce"] = abs(bi_rank_val - ce_rank_val)
+
+    # Cross-encoder score margin (confidence signal)
+    q_ce = crossencoder_scores.get(query_id, {})
+    if q_ce:
+        sorted_ce_vals = sorted(q_ce.values(), reverse=True)
+        top_ce = sorted_ce_vals[0] if sorted_ce_vals else 0.0
+        second_ce = sorted_ce_vals[1] if len(sorted_ce_vals) > 1 else 0.0
+        feats["ce_score_margin"] = top_ce - second_ce
+    else:
+        feats["ce_score_margin"] = 0.0
+
+    # Document structure features (set to 0.0 — populated by build_feature_matrix)
+    feats.setdefault("query_word_count", 0.0)
+    feats.setdefault("candidate_word_count", 0.0)
+    feats.setdefault("word_count_ratio", 0.0)
+    feats.setdefault("candidate_citation_density", 0.0)
 
     return feats
 
@@ -250,6 +298,7 @@ def build_feature_matrix(
     multi_scores: dict[str, dict[str, dict[str, float]]] | None = None,
     gnn_scores: dict[str, dict[str, float]] | None = None,
     reasoning_scores: dict[str, dict[str, float]] | None = None,
+    raw_corpus: dict[str, str] | None = None,  # NEW: for document structure features
     subsample: bool = True,
     max_neg_ratio: int = 10,
     max_neg_per_query: int = 50,
@@ -323,6 +372,29 @@ def build_feature_matrix(
             feats["label"] = 1 if cand_id in positive_set else 0
             rows.append(feats)
 
+    # Populate document structure features from raw corpus
+    if raw_corpus is not None:
+        corpus_stats = {}
+        for doc_id, text in raw_corpus.items():
+            words = text.split()
+            n_markers = text.count("<FRAGMENT_SUPPRESSED>")
+            corpus_stats[doc_id] = {
+                "word_count": len(words),
+                "citation_density": n_markers / max(len(words) / 1000, 0.001),
+            }
+
+        for row in rows:
+            qid = row["query_id"]
+            cid = row["candidate_id"]
+            q_stats = corpus_stats.get(qid, {})
+            c_stats = corpus_stats.get(cid, {})
+            q_wc = q_stats.get("word_count", 0)
+            c_wc = c_stats.get("word_count", 0)
+            row["query_word_count"] = float(q_wc)
+            row["candidate_word_count"] = float(c_wc)
+            row["word_count_ratio"] = min(q_wc, c_wc) / max(q_wc, c_wc, 1)
+            row["candidate_citation_density"] = c_stats.get("citation_density", 0.0)
+
     df = pd.DataFrame(rows)
 
     # Fill missing PPR/score-dist columns with defaults
@@ -367,6 +439,112 @@ def train_meta_learner(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     is_ranking = lgbm_params.get("objective", "binary") in ("lambdarank", "rank_xendcg")
+
+    # --- Temporal split option (Phase 1 fix) ---
+    from coliee_task1.config import USE_TEMPORAL_SPLIT, TEMPORAL_VAL_FRACTION
+
+    if USE_TEMPORAL_SPLIT:
+        # Sort queries by ID (higher IDs = newer cases in COLIEE)
+        unique_queries = sorted(df["query_id"].unique())
+        n_val = max(1, int(len(unique_queries) * TEMPORAL_VAL_FRACTION))
+        val_queries = set(unique_queries[-n_val:])
+        train_queries = set(unique_queries[:-n_val])
+
+        logger.info("Temporal split: %d train queries, %d val queries (newest)",
+                     len(train_queries), len(val_queries))
+
+        train_mask = df["query_id"].isin(train_queries)
+        val_mask = df["query_id"].isin(val_queries)
+
+        # Extract n_estimators and early_stopping_rounds from params
+        params = {k: v for k, v in lgbm_params.items()
+                  if k not in ("n_estimators", "early_stopping_rounds")}
+        n_estimators = lgbm_params.get("n_estimators", 500)
+        early_stopping = lgbm_params.get("early_stopping_rounds", 50)
+
+        X_train = df.loc[train_mask, feature_cols].values
+        y_train = df.loc[train_mask, "label"].values
+        X_val = df.loc[val_mask, feature_cols].values
+        y_val = df.loc[val_mask, "label"].values
+
+        train_ds = lgb.Dataset(X_train, label=y_train)
+        val_ds = lgb.Dataset(X_val, label=y_val, reference=train_ds)
+
+        model = lgb.train(
+            params,
+            train_ds,
+            num_boost_round=n_estimators,
+            valid_sets=[val_ds],
+            valid_names=["valid"],
+            callbacks=[
+                lgb.early_stopping(stopping_rounds=early_stopping),
+                lgb.log_evaluation(100),
+            ],
+        )
+        models = [model]
+
+        # OOF predictions on val set for threshold optimization
+        val_scores = model.predict(X_val)
+        oof_query_scores: dict[str, list[tuple[str, float]]] = {}
+        labels_dict: dict[str, list[str]] = {}
+        for i, (_, row) in enumerate(df.loc[val_mask].iterrows()):
+            qid = row["query_id"]
+            cid = row["candidate_id"]
+            if qid not in oof_query_scores:
+                oof_query_scores[qid] = []
+            oof_query_scores[qid].append((cid, val_scores[i]))
+            if row["label"] == 1:
+                if qid not in labels_dict:
+                    labels_dict[qid] = []
+                labels_dict[qid].append(cid)
+
+        for qid in oof_query_scores:
+            if qid not in labels_dict:
+                labels_dict[qid] = []
+
+        threshold, cv_metrics = optimize_threshold(oof_query_scores, labels_dict)
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+        model.save_model(str(output_dir / "fold_0.txt"))
+
+        # Platt scaling: calibrate raw LGBM scores to probabilities
+        from sklearn.linear_model import LogisticRegression
+        import joblib
+
+        if len(val_scores) > 0:
+            calibrator = LogisticRegression(C=1.0, solver="lbfgs", max_iter=1000)
+            X_cal = np.array(val_scores).reshape(-1, 1)
+            y_cal = np.array(y_val)
+            calibrator.fit(X_cal, y_cal)
+
+            cal_path = output_dir / "calibrator.pkl"
+            joblib.dump(calibrator, cal_path)
+            logger.info("Platt scaling fitted [temporal]: intercept=%.4f, coef=%.4f",
+                         calibrator.intercept_[0], calibrator.coef_[0][0])
+
+        # Feature importance
+        importance = model.feature_importance(importance_type="gain")
+        fi = sorted(zip(feature_cols, importance), key=lambda x: -x[1])
+        logger.info("Feature importance (gain) [temporal split]:")
+        for name, imp in fi:
+            logger.info("  %s: %.1f", name, imp)
+
+        config = {
+            "threshold": threshold,
+            "cv_f1": cv_metrics.get("f1", 0),
+            "objective": lgbm_params.get("objective", "binary"),
+            "feature_cols": feature_cols,
+            "split": "temporal",
+        }
+        (output_dir / "config.json").write_text(json.dumps(config, indent=2))
+
+        logger.info(
+            "Temporal CV Results: F1=%.4f, P=%.4f, R=%.4f (threshold=%.3f)",
+            cv_metrics.get("f1", 0), cv_metrics.get("precision", 0),
+            cv_metrics.get("recall", 0), threshold,
+        )
+        return models, threshold, cv_metrics
+    # --- End temporal split ---
 
     X = df[feature_cols].values
     y = df["label"].values
@@ -479,6 +657,28 @@ def train_meta_learner(
         "feature_cols": feature_cols,
     }
     (output_dir / "config.json").write_text(json.dumps(config, indent=2))
+
+    # Platt scaling: calibrate raw LGBM scores to probabilities
+    from sklearn.linear_model import LogisticRegression
+    import joblib
+
+    oof_scores_for_cal = []
+    oof_labels_for_cal = []
+    for i in range(len(df)):
+        if oof_scores[i] != 0.0:  # Only calibrate on OOF predictions (non-zero)
+            oof_scores_for_cal.append(oof_scores[i])
+            oof_labels_for_cal.append(y[i])
+
+    if oof_scores_for_cal:
+        calibrator = LogisticRegression(C=1.0, solver="lbfgs", max_iter=1000)
+        X_cal = np.array(oof_scores_for_cal).reshape(-1, 1)
+        y_cal = np.array(oof_labels_for_cal)
+        calibrator.fit(X_cal, y_cal)
+
+        cal_path = output_dir / "calibrator.pkl"
+        joblib.dump(calibrator, cal_path)
+        logger.info("Platt scaling fitted: intercept=%.4f, coef=%.4f",
+                     calibrator.intercept_[0], calibrator.coef_[0][0])
 
     # Feature importance
     importance = np.zeros(len(feature_cols))
@@ -598,6 +798,7 @@ def predict(
     threshold: float,
     feature_cols: list[str] | None = None,
     min_per_query: int = 0,
+    model_dir: Path | None = None,
 ) -> dict[str, list[str]]:
     """Generate predictions using ensemble of fold models.
 
@@ -605,14 +806,27 @@ def predict(
 
     Args:
         min_per_query: minimum predictions per query (Option 18: top-1 guarantee)
+        model_dir: directory containing trained models and calibrator
     """
     if feature_cols is None:
         feature_cols = FEATURE_COLS
+    if model_dir is None:
+        model_dir = MODELS_DIR / "meta_learner"
     X = df[feature_cols].values
     scores = np.zeros(len(df))
     for model in models:
         scores += model.predict(X)
     scores /= len(models)
+
+    # Apply Platt scaling if calibrator exists
+    calibrator_path = model_dir / "calibrator.pkl"
+    if calibrator_path.exists():
+        import joblib
+        calibrator = joblib.load(calibrator_path)
+        raw_scores = scores.copy()
+        scores = calibrator.predict_proba(scores.reshape(-1, 1))[:, 1]
+        logger.info("Applied Platt scaling: raw [%.3f, %.3f] -> calibrated [%.3f, %.3f]",
+                     raw_scores.min(), raw_scores.max(), scores.min(), scores.max())
 
     # Convert to query-level predictions
     query_scores: dict[str, list[tuple[str, float]]] = {}

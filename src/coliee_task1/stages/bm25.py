@@ -7,6 +7,7 @@ retrieval with Reciprocal Rank Fusion (RRF).
 import logging
 import re
 from collections import Counter
+from functools import lru_cache
 from typing import Sequence
 
 import numpy as np
@@ -21,9 +22,40 @@ BM25_K1 = 1.5
 BM25_B = 0.75
 
 
+# Lightweight suffix stripping for legal text (no external dependency)
+_SUFFIX_RULES = [
+    (r"ies$", "y"), (r"ied$", "y"),
+    (r"tion$", "t"), (r"sion$", "s"),
+    (r"ness$", ""), (r"ment$", ""),
+    (r"ing$", ""), (r"ings$", ""),
+    (r"ous$", ""), (r"ive$", ""),
+    (r"ed$", ""), (r"er$", ""),
+    (r"es$", ""), (r"s$", ""),
+]
+
+
+@lru_cache(maxsize=100_000)
+def _stem(word: str) -> str:
+    """Lightweight suffix stripping (no external dependency)."""
+    if len(word) <= 3:
+        return word
+    for pattern, replacement in _SUFFIX_RULES:
+        stripped = re.sub(pattern, replacement, word)
+        if stripped != word and len(stripped) >= 3:
+            return stripped
+    return word
+
+
 def tokenize(text: str) -> list[str]:
-    """Simple whitespace + lowercase tokenizer."""
-    return re.findall(r"\w+", text.lower())
+    """Legal-aware tokenizer with lightweight stemming.
+
+    Improvements over simple \\w+ regex:
+    - Preserves hyphenated legal terms as single tokens
+    - Applies lightweight stemming to reduce vocabulary mismatch
+    - Lowercases for case-insensitive matching
+    """
+    tokens = re.findall(r"[\w]+-[\w]+|[\w]+", text.lower())
+    return [_stem(t) for t in tokens]
 
 
 def rrf_fuse(
@@ -81,6 +113,47 @@ def convex_fuse(
 
     sorted_results = sorted(combined.items(), key=lambda x: -x[1])
     return sorted_results[:top_k]
+
+
+def hybrid_fuse(
+    bm25_results: dict[str, list[tuple[str, float]]],
+    dense_results: dict[str, list[tuple[str, float]]],
+    method: str = "convex",
+    alpha: float = 0.6,
+    rrf_k: int = 60,
+    top_k: int = BM25_TOP_K,
+) -> dict[str, list[tuple[str, float]]]:
+    """Fuse BM25 and dense retrieval results per query.
+
+    Args:
+        bm25_results: {query_id: [(doc_id, score), ...]} from BM25
+        dense_results: {query_id: [(doc_id, score), ...]} from dense retrieval
+        method: "convex" (score-level, recommended) or "rrf" (rank-level)
+        alpha: Weight for BM25 in convex fusion (higher = more BM25)
+        rrf_k: Smoothing parameter for RRF fusion
+        top_k: Max results per query
+    """
+    all_qids = set(bm25_results.keys()) | set(dense_results.keys())
+    fused_results = {}
+
+    for qid in all_qids:
+        bm25_list = bm25_results.get(qid, [])
+        dense_list = dense_results.get(qid, [])
+
+        if method == "rrf":
+            fused = rrf_fuse([bm25_list, dense_list], k=rrf_k, top_k=top_k)
+        elif method == "convex":
+            bm25_dict = {did: score for did, score in bm25_list}
+            dense_dict = {did: score for did, score in dense_list}
+            fused = convex_fuse(bm25_dict, dense_dict, alpha=alpha, top_k=top_k)
+        else:
+            raise ValueError(f"Unknown fusion method: {method}")
+
+        fused_results[qid] = fused
+
+    n_avg = sum(len(v) for v in fused_results.values()) / max(len(fused_results), 1)
+    logger.info("Hybrid fusion (%s, alpha=%.2f): avg %.1f candidates/query", method, alpha, n_avg)
+    return fused_results
 
 
 def tune_convex_alpha(

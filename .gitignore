@@ -16,6 +16,13 @@ data/
 docs/
 notebooks/
 __marimo__/
+# Superpowers skills/plans — kept locally, not tracked (per user instruction)
+superpowers/
+
+# Paper (kept locally, not tracked)
+paper/
+# Paperwork: latest paper sources/PDFs — NEVER commit (per user instruction)
+paperwork/
 
 # Output artifacts
 output/
@@ -24,3 +31,5 @@ output/
 # Sensitive / personal files
 *.pdf
 CLAUDE.md
+# Local MCP / tooling config (machine-specific paths)
+.mcp.json

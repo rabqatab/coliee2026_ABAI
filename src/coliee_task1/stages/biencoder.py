@@ -227,3 +227,48 @@ def biencoder_retrieve(
     similarities = query_embedding @ corpus_embeddings.T
     top_indices = np.argsort(-similarities)[:top_k]
     return [(corpus_doc_ids[i], float(similarities[i])) for i in top_indices]
+
+
+def dense_retrieve_full_corpus(
+    query_ids: list[str],
+    doc_ids: list[str],
+    embeddings: np.ndarray,
+    top_k: int = 200,
+) -> dict[str, list[tuple[str, float]]]:
+    """Full-corpus dense retrieval using pre-computed embeddings.
+
+    For each query, computes cosine similarity against ALL corpus documents
+    and returns top-K results. Complementary to BM25 — finds semantically
+    similar documents that may lack lexical overlap.
+    """
+    import logging
+    _logger = logging.getLogger(__name__)
+
+    doc_idx = {did: i for i, did in enumerate(doc_ids)}
+
+    # Normalize for cosine similarity via dot product
+    norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+    norms = np.clip(norms, 1e-8, None)
+    normed = embeddings / norms
+
+    dense_results: dict[str, list[tuple[str, float]]] = {}
+    for i, qid in enumerate(query_ids):
+        if qid not in doc_idx:
+            continue
+
+        q_emb = normed[doc_idx[qid]]
+        sims = normed @ q_emb
+        sims[doc_idx[qid]] = -1.0  # exclude self
+
+        top_indices = np.argpartition(-sims, top_k)[:top_k]
+        top_indices = top_indices[np.argsort(-sims[top_indices])]
+
+        dense_results[qid] = [
+            (doc_ids[idx], float(sims[idx])) for idx in top_indices
+        ]
+
+        if (i + 1) % 200 == 0:
+            _logger.info("  Dense retrieval: %d/%d queries", i + 1, len(query_ids))
+
+    _logger.info("Dense retrieval complete: %d queries, top-%d", len(dense_results), top_k)
+    return dense_results

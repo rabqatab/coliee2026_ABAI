@@ -1,9 +1,10 @@
 """Fine-tune a cross-encoder for legal case reranking.
 
-Supports 3 approaches for handling long documents:
-  - "smart":   Smart truncation using citation context windows (default)
-  - "longctx": Long-context model (BGE-reranker-v2-m3, up to 8192 tokens)
-  - "passage": Passage-level scoring with max-pooling aggregation
+Supports 4 approaches for handling long documents:
+  - "smart":      Smart truncation using citation context windows (default)
+  - "longctx":    Long-context model (BGE-reranker-v2-m3, up to 8192 tokens)
+  - "passage":    Passage-level scoring with max-pooling aggregation
+  - "modernbert": ModernBERT-large (8192 native tokens, 5000-word budget)
 
 All approaches produce the same output format: {query_id: {candidate_id: score}}
 """
@@ -54,6 +55,7 @@ def smart_truncate(
     max_words: int = 500,
     head_words: int = 100,
     tail_words: int = 100,
+    word_budget: int = 500,
 ) -> str:
     """Smart truncation: head + citation contexts + tail.
 
@@ -64,19 +66,24 @@ def smart_truncate(
       3. Closing (disposition, conclusion) - tail_words
 
     Falls back to naive truncation if no contexts available.
+
+    Args:
+        word_budget: Overall word budget; if document fits within this, skip
+            truncation entirely.  Also used as the effective max_words for the
+            head+context+tail assembly when truncation *is* needed.
     """
     words = text.split()
-    if len(words) <= max_words:
-        return text
+    if len(words) <= word_budget:
+        return text  # No truncation needed -- full document fits
 
     if not context_texts:
-        return " ".join(words[:max_words])
+        return " ".join(words[:word_budget])
 
     head = " ".join(words[:head_words])
     tail = " ".join(words[-tail_words:]) if len(words) > tail_words else ""
 
     # Fill middle budget with citation context windows
-    middle_budget = max_words - head_words - tail_words
+    middle_budget = word_budget - head_words - tail_words
     middle_parts = []
     used_words = 0
     for ctx in context_texts:
@@ -221,6 +228,7 @@ def build_training_pairs(
     mode: str = "smart",
     max_words: int = 500,
     neg_ratio: int = 4,
+    dense_results: dict[str, list[tuple[str, float]]] | None = None,
 ) -> list[tuple[str, str, int]]:
     """Build (query_text, candidate_text, label) pairs for cross-encoder training.
 
@@ -228,10 +236,17 @@ def build_training_pairs(
         contexts: {doc_id: DocumentContexts} for smart truncation
         mode: "smart", "longctx", or "passage"
         max_words: Word budget per document
+        dense_results: Optional dense retrieval results for semantic hard negatives.
+            Format: {query_id: [(candidate_id, score), ...]}
+            When provided, negatives are mixed 70% BM25 + 30% dense.
     """
     def _prepare_text(doc_id: str) -> str:
         text = corpus_texts.get(doc_id, "")
-        if mode == "smart" and contexts:
+        if mode == "modernbert" and contexts:
+            dc = contexts.get(doc_id)
+            ctx_texts = [c.text for c in dc.contexts] if dc and dc.contexts else []
+            return smart_truncate(text, ctx_texts, max_words=max_words, word_budget=max_words)
+        elif mode == "smart" and contexts:
             dc = contexts.get(doc_id)
             ctx_texts = [c.text for c in dc.contexts] if dc and dc.contexts else []
             return smart_truncate(text, ctx_texts, max_words=max_words)
@@ -257,8 +272,21 @@ def build_training_pairs(
             doc_id for doc_id, _ in bm25_results
             if doc_id not in positive_set and doc_id != query_id
         ]
-        n_neg = min(len(positives) * neg_ratio, len(hard_negs))
-        for neg_id in hard_negs[:n_neg]:
+
+        # When dense results available, mix 70% BM25 + 30% dense negatives
+        if dense_results is not None:
+            dense_negs = [
+                cid for cid, _ in dense_results.get(query_id, [])
+                if cid not in positive_set and cid not in set(hard_negs[:20])
+            ]
+            n_total = len(positives) * neg_ratio
+            n_bm25 = int(n_total * 0.7)
+            n_dense = n_total - n_bm25
+            selected_negs = hard_negs[:n_bm25] + dense_negs[:n_dense]
+        else:
+            selected_negs = hard_negs[:len(positives) * neg_ratio]
+
+        for neg_id in selected_negs:
             if neg_id in corpus_texts:
                 pairs.append((query_text, _prepare_text(neg_id), 0))
 
@@ -295,7 +323,8 @@ def finetune_crossencoder(
     Args:
         mode: "smart" (DeBERTa + citation contexts),
               "longctx" (BGE-reranker, long input),
-              "passage" (DeBERTa + passage-level, trained same as smart)
+              "passage" (DeBERTa + passage-level, trained same as smart),
+              "modernbert" (ModernBERT-large, 8192-token context)
     """
     if output_dir is None:
         output_dir = MODELS_DIR / "crossencoder"
@@ -306,6 +335,21 @@ def finetune_crossencoder(
 
     is_longctx = mode == "longctx"
 
+    # --- Mode-specific overrides ---
+    if mode == "modernbert":
+        from coliee_task1.config import (
+            CROSSENCODER_MODERNBERT_MODEL,
+            CROSSENCODER_MODERNBERT_MAX_LENGTH,
+            CROSSENCODER_MODERNBERT_BATCH_SIZE,
+            CROSSENCODER_MODERNBERT_LR,
+            CROSSENCODER_MODERNBERT_WORD_BUDGET,
+        )
+        model_name = CROSSENCODER_MODERNBERT_MODEL
+        max_length = CROSSENCODER_MODERNBERT_MAX_LENGTH
+        batch_size = CROSSENCODER_MODERNBERT_BATCH_SIZE
+        lr = CROSSENCODER_MODERNBERT_LR
+        num_labels = 2
+
     # --- Model setup ---
     logger.info("Loading base model: %s", model_name)
     tokenizer = AutoTokenizer.from_pretrained(model_name)
@@ -313,6 +357,10 @@ def finetune_crossencoder(
     if is_longctx:
         model = AutoModelForSequenceClassification.from_pretrained(
             model_name, num_labels=1,
+        ).to(device)
+    elif mode == "modernbert":
+        model = AutoModelForSequenceClassification.from_pretrained(
+            model_name, num_labels=num_labels,
         ).to(device)
     else:
         # DeBERTa-v3: force fp32 to avoid NaN (known XSoftmax overflow in fp16)
@@ -322,7 +370,7 @@ def finetune_crossencoder(
         logger.info("Forced fp32 for DeBERTa-v3 NaN prevention")
 
     # --- Training pairs ---
-    max_words = 3000 if is_longctx else 500
+    max_words = CROSSENCODER_MODERNBERT_WORD_BUDGET if mode == "modernbert" else (3000 if is_longctx else 500)
     pairs = build_training_pairs(
         labels, corpus_texts, bm25_candidates,
         contexts=contexts, mode=mode, max_words=max_words,
@@ -448,9 +496,9 @@ def crossencoder_rerank(
     """Rerank candidates using the cross-encoder.
 
     Args:
-        mode: "smart", "longctx", or "passage"
-        query_contexts: Citation context texts for the query (smart/passage modes)
-        candidate_contexts: {candidate_id: [context_texts]} (smart mode)
+        mode: "smart", "longctx", "passage", or "modernbert"
+        query_contexts: Citation context texts for the query (smart/passage/modernbert modes)
+        candidate_contexts: {candidate_id: [context_texts]} (smart/modernbert mode)
 
     Returns:
         [(doc_id, score), ...] sorted by score descending.
@@ -469,7 +517,21 @@ def crossencoder_rerank(
     # For smart and longctx: prepare texts then score
     doc_ids = [did for did, _ in candidates]
 
-    if mode == "smart":
+    if mode == "modernbert":
+        from coliee_task1.config import (
+            CROSSENCODER_MODERNBERT_MAX_LENGTH,
+            CROSSENCODER_MODERNBERT_BATCH_SIZE,
+            CROSSENCODER_MODERNBERT_WORD_BUDGET,
+        )
+        max_length = CROSSENCODER_MODERNBERT_MAX_LENGTH
+        batch_size = CROSSENCODER_MODERNBERT_BATCH_SIZE
+        wb = CROSSENCODER_MODERNBERT_WORD_BUDGET
+        q_text = smart_truncate(query_text, query_contexts, max_words=wb, word_budget=wb)
+        prepared_candidates = []
+        for did, text in candidates:
+            ctx = (candidate_contexts or {}).get(did, [])
+            prepared_candidates.append(smart_truncate(text, ctx, max_words=wb, word_budget=wb))
+    elif mode == "smart":
         q_text = smart_truncate(query_text, query_contexts, max_words=500)
         prepared_candidates = []
         for did, text in candidates:

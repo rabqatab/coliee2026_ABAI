@@ -1,21 +1,19 @@
 # COLIEE 2026 Task 1 — Legal Case Retrieval
 
-**Team:** AlphaBridge-TeamAI
+**Team:** ABAI (AlphaBridge)
 
-An 8-stage hybrid retrieval pipeline for [COLIEE 2026](https://sites.ualberta.ca/~rabelo/COLIEE2026/) Task 1: given a query case with citations removed, retrieve the cases it cites from a corpus of ~9,500 Federal Court of Canada decisions.
+A four-stage hybrid retrieval pipeline for [COLIEE 2026](https://coliee.org/) Task 1: given a query case with citations removed, retrieve the cases it cites from a corpus of ~9,500 Federal Court of Canada decisions. Citation passages are suppressed with `<FRAGMENT_SUPPRESSED>` markers, creating a lexical gap between query and cited cases.
 
 ## Pipeline
 
-| Stage | Component | Description |
-|-------|-----------|-------------|
-| 1 | Preprocessing | Citation-context extraction around `<FRAGMENT_SUPPRESSED>` markers |
-| 2 | BM25 | Multi-view BM25 (full-doc + per-context) with RRF fusion |
-| 3 | Bi-encoder | Fine-tuned BGE-large-en-v1.5 with LoRA |
-| 3b | Multi-signal | BGE-M3 dense + sparse + ColBERT retrieval |
-| 4 | Cross-encoder | Fine-tuned DeBERTa-v3-large with citation-context-aware truncation |
-| 5 | GraphRAG | Regex entity extraction, bipartite graph, Leiden communities |
-| 5.5 | GNN | 2-layer GAT on corpus k-NN graph for score refinement |
-| 6 | Meta-learner | LightGBM fusing 38 features, GroupKFold 5-fold CV |
+Four independently trained stages. Stages 1–3 also emit features consumed by the Stage 4 meta-learner (34 features total).
+
+| Stage | Component | Description | Features |
+|-------|-----------|-------------|----------|
+| 1 | Retrieval & Fusion | Multi-view BM25 (full-doc + citation-context windows) with RRF fusion → top-200 candidate pool | 9 |
+| 2 | Neural Reranking | Fine-tuned BGE-large bi-encoder (LoRA) + BGE-M3 (dense/sparse/ColBERT) + DeBERTa-v3-large cross-encoder (selective truncation) | 8 |
+| 3 | Graph-Based Reranking | GraphRAG Lite (regex entities → bipartite graph → Leiden communities) + 2-layer GAT on corpus k-NN graph | 11 |
+| 4 | Meta-Learner | LightGBM fusing all 34 features (incl. 6 score-distribution features), GroupKFold 5-fold CV | 6 |
 
 All models are open-source. No closed-source LLMs or external APIs.
 
@@ -53,6 +51,7 @@ src/
     stages/                # Pipeline stage modules
     utils/                 # Shared utilities (metrics, normalization, regex)
   baselines/               # Baseline reimplementations for comparison
+  analysis/                # EDA and label-signal validation scripts
 scripts/                   # Experiment scripts
 tests/                     # Unit tests
 data/                      # Competition corpus (not in repo)
@@ -61,12 +60,21 @@ output/                    # Model weights, caches, submissions (not in repo)
 
 ## Results
 
-**Cross-validation (honest, no leakage):** F1 = 0.3108 (P = 0.3720, R = 0.2669)
+| Evaluation | F1 | Precision | Recall |
+|------------|-----|-----------|--------|
+| Cross-validation (5-fold, honest) | 0.311 | 0.368 | 0.270 |
+| **Official test set** (run 2, best) | **0.177** | 0.160 | 0.199 |
 
-Ablation highlights:
-- Cross-encoder contributes the most (+0.075 F1)
-- Lexical features are second (+0.023 F1)
-- GNN + BGE-M3 combined contribute +0.012 F1
+Our best run ranked **35th of 54 official runs** (15th of 22 teams by each team's best run). The ~43% relative drop from cross-validation to test is the central finding, attributed to three factors: a **57.8% recall ceiling** from BM25 top-200 retrieval, temporal distribution shift, and threshold miscalibration from gold-injected training pools.
+
+**Ablation (ΔF1 when component removed):**
+- Cross-encoder −0.075 (24% relative — dominant component)
+- Lexical features −0.023
+- GNN + BGE-M3 −0.012
+- GraphRAG −0.006
+- Bi-encoder −0.001
+
+The camera-ready paper appears in the COLIEE 2026 proceedings.
 
 ## License
 
