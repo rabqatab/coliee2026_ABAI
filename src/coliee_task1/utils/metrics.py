@@ -40,6 +40,136 @@ def micro_f1(
     }
 
 
+def _sorted_candidates(
+    candidates: list[tuple[str, float]],
+) -> list[str]:
+    """Return candidate ids sorted by score descending (stable)."""
+    return [cid for cid, _ in sorted(candidates, key=lambda x: -x[1])]
+
+
+def recall_at_k(
+    ranked: dict[str, list[tuple[str, float]]],
+    labels: dict[str, list[str]],
+    k: int,
+) -> dict[str, float]:
+    """Recall@k, micro- and macro-averaged over queries.
+
+    Micro: (sum of golds retrieved in top-k) / (sum of all golds).
+    Macro: mean over queries of (golds in top-k / golds for that query).
+    Only queries that have at least one gold label are counted.
+
+    Args:
+        ranked: {query_id: [(candidate_id, score), ...]} (unsorted ok)
+        labels: {query_id: [gold_candidate_id, ...]}
+        k: cutoff
+
+    Returns:
+        {"micro": float, "macro": float}
+    """
+    total_gold = 0
+    total_hit = 0
+    per_query = []
+    for qid, golds in labels.items():
+        gold_set = set(golds)
+        if not gold_set:
+            continue
+        order = _sorted_candidates(ranked.get(qid, []))[:k]
+        hit = sum(1 for cid in order if cid in gold_set)
+        total_gold += len(gold_set)
+        total_hit += hit
+        per_query.append(hit / len(gold_set))
+    micro = total_hit / total_gold if total_gold > 0 else 0.0
+    macro = float(np.mean(per_query)) if per_query else 0.0
+    return {"micro": micro, "macro": macro}
+
+
+def _dcg(rels: list[int]) -> float:
+    """Discounted cumulative gain for a list of binary relevances."""
+    return sum(r / np.log2(i + 2) for i, r in enumerate(rels))
+
+
+def ndcg_at_k(
+    ranked: dict[str, list[tuple[str, float]]],
+    labels: dict[str, list[str]],
+    k: int,
+) -> dict[str, float]:
+    """NDCG@k with binary relevance, macro- and micro-averaged.
+
+    For each query, DCG@k of the stage ranking is normalized by the ideal
+    DCG@k (all golds ranked first). Macro = mean per-query NDCG. Micro is
+    the gold-weighted variant (sum of DCG over sum of ideal DCG), which
+    weights queries by their number of golds.
+
+    Returns:
+        {"micro": float, "macro": float}
+    """
+    per_query = []
+    sum_dcg = 0.0
+    sum_idcg = 0.0
+    for qid, golds in labels.items():
+        gold_set = set(golds)
+        if not gold_set:
+            continue
+        order = _sorted_candidates(ranked.get(qid, []))[:k]
+        rels = [1 if cid in gold_set else 0 for cid in order]
+        dcg = _dcg(rels)
+        ideal_n = min(len(gold_set), k)
+        idcg = _dcg([1] * ideal_n)
+        sum_dcg += dcg
+        sum_idcg += idcg
+        per_query.append(dcg / idcg if idcg > 0 else 0.0)
+    macro = float(np.mean(per_query)) if per_query else 0.0
+    micro = sum_dcg / sum_idcg if sum_idcg > 0 else 0.0
+    return {"micro": micro, "macro": macro}
+
+
+def average_precision(ranked_ids: list[str], gold_set: set[str]) -> float:
+    """Average precision for a single ranked list against gold set.
+
+    AP = (1/|gold|) * sum over ranks of relevant docs of precision@rank.
+    Normalized by the total number of gold documents (so unretrieved
+    golds contribute 0). Returns 0 if no golds.
+    """
+    if not gold_set:
+        return 0.0
+    hits = 0
+    ap = 0.0
+    for i, cid in enumerate(ranked_ids):
+        if cid in gold_set:
+            hits += 1
+            ap += hits / (i + 1)
+    return ap / len(gold_set)
+
+
+def mean_average_precision(
+    ranked: dict[str, list[tuple[str, float]]],
+    labels: dict[str, list[str]],
+) -> dict[str, float]:
+    """Mean Average Precision over queries.
+
+    Macro: mean of per-query AP. Micro: gold-weighted mean (sum of
+    AP * |gold| over sum of |gold|), emphasizing queries with more golds.
+
+    Returns:
+        {"micro": float, "macro": float}
+    """
+    per_query = []
+    weighted_sum = 0.0
+    total_gold = 0
+    for qid, golds in labels.items():
+        gold_set = set(golds)
+        if not gold_set:
+            continue
+        order = _sorted_candidates(ranked.get(qid, []))
+        ap = average_precision(order, gold_set)
+        per_query.append(ap)
+        weighted_sum += ap * len(gold_set)
+        total_gold += len(gold_set)
+    macro = float(np.mean(per_query)) if per_query else 0.0
+    micro = weighted_sum / total_gold if total_gold > 0 else 0.0
+    return {"micro": micro, "macro": macro}
+
+
 def scores_to_predictions(
     scores: dict[str, list[tuple[str, float]]],
     threshold: float,

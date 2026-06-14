@@ -225,8 +225,21 @@ class BM25Index:
         self._avgdl: float = 0.0
         self._doc_lens: np.ndarray | None = None
 
-    def fit(self, doc_ids: Sequence[str], texts: Sequence[str]) -> None:
-        """Build BM25 index from corpus."""
+    def fit(
+        self,
+        doc_ids: Sequence[str],
+        texts: Sequence[str],
+        k1: float = BM25_K1,
+        b: float = BM25_B,
+    ) -> None:
+        """Build BM25 index from corpus.
+
+        Args:
+            doc_ids: Document identifiers
+            texts: Document texts (same order as doc_ids)
+            k1: BM25 term-frequency saturation parameter (default module constant)
+            b: BM25 length-normalization parameter (default module constant)
+        """
         self._doc_ids = list(doc_ids)
         n_docs = len(doc_ids)
 
@@ -256,8 +269,8 @@ class BM25Index:
                 rows.append(doc_idx)
                 cols.append(tid)
                 # BM25 TF normalization: tf * (k1 + 1) / (tf + k1 * (1 - b + b * dl/avgdl))
-                norm_tf = (count * (BM25_K1 + 1)) / (
-                    count + BM25_K1 * (1 - BM25_B + BM25_B * doc_lens[doc_idx] / self._avgdl)
+                norm_tf = (count * (k1 + 1)) / (
+                    count + k1 * (1 - b + b * doc_lens[doc_idx] / self._avgdl)
                 )
                 data.append(norm_tf)
                 df[tid] += 1
